@@ -6,6 +6,7 @@ goog.provide('ee.Number');
 
 goog.require('ee.ApiFunction');
 goog.require('ee.ComputedObject');
+goog.require('ee.rpc_node');
 
 
 
@@ -36,7 +37,7 @@ ee.Number = function(number) {
    */
   this.number_;
 
-  if (goog.isNumber(number)) {
+  if (typeof number === 'number') {
     ee.Number.base(this, 'constructor', null, null);
     this.number_ = /** @type {number} */ (number);
   } else if (number instanceof ee.ComputedObject) {
@@ -77,10 +78,22 @@ ee.Number.reset = function() {
  * @override
  */
 ee.Number.prototype.encode = function(encoder) {
-  if (goog.isNumber(this.number_)) {
+  if (typeof this.number_ === 'number') {
     return this.number_;
   } else {
     return ee.Number.base(this, 'encode', encoder);
+  }
+};
+
+
+/**
+ * @override
+ */
+ee.Number.prototype.encodeCloudValue = function(encoder) {
+  if (typeof this.number_ === 'number') {
+    return ee.rpc_node.reference(encoder(this.number_));
+  } else {
+    return ee.Number.base(this, 'encodeCloudValue', encoder);
   }
 };
 

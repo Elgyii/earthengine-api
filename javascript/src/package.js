@@ -35,6 +35,7 @@ goog.require('ee.CustomFunction');
 goog.require('ee.SavedFunction');
 goog.require('ee.arguments');
 goog.require('ee.data');
+goog.requireType('ee.Function.Signature');
 
 
 
@@ -97,7 +98,7 @@ ee.Package.importedPackages_ = {};
  * @param {string|ee.Function.Signature} signature The function's signature,
  *     or a C-style function declaration string, to construct a signature from.
  * @param {Function} body The function's body.
- * @return {Function} The newly added function.
+ * @return {!Function} The newly added function.
  */
 ee.Package.makeFunction = function(signature, body) {
   if (typeof(signature) == 'string') {
@@ -203,7 +204,7 @@ ee.Package.save = function(pkg, path) {
     // Save everything that needs saving.
     for (var index = 0; index < custom.length; index++) {
       var name = custom[index]['name'];
-      var algorithm = custom[index]['algorithm'].serialize();
+      var algorithm = custom[index]['algorithm'].serialize(/* legacy = */ true);
       ee.data.createAsset(algorithm, path + '/' + name);
     }
   }
@@ -316,7 +317,7 @@ ee.Package.encodeDecl_ = function(signature, name) {
  * @param {string} path The path to the saved function's folder.
  * @param {string} name The name of the saved function.
  * @param {ee.Function.Signature} signature The function's signature,
- * @return {Function} A function making the SavedFunction callable.
+ * @return {!Function} A function making the SavedFunction callable.
  * @private
  */
 ee.Package.makeInvocation_ = function(path, name, signature) {

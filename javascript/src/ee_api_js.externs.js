@@ -3,8 +3,8 @@
  * @externs
  */
 /**
- @const
- @suppress {const,duplicate}
+ * @const
+ * @suppress {const,duplicate}
  */
 var ee = {};
 /**
@@ -24,7 +24,7 @@ ee.AbstractOverlay = function(url, mapId, token, opt_init, opt_profiler) {
 ee.Algorithms = {};
 /**
  * @param {string} name
- * @param {(ee.data.AlgorithmSignature|{args: !Array<(ee.data.AlgorithmArgument|null)>, deprecated: (string|undefined), description: (string|undefined), name: string, returns: string})=} opt_signature
+ * @param {(ee.data.AlgorithmSignature|{args: !Array<(ee.data.AlgorithmArgument|null)>, deprecated: (string|undefined), description: (string|undefined), name: string, preview: (boolean|undefined), returns: string, sourceCodeUri: (string|undefined)})=} opt_signature
  * @return {?}
  * @extends {ee.Function}
  * @constructor
@@ -67,13 +67,13 @@ ee.Collection = function(func, args, opt_varName) {
 ee.Collection.prototype.filter = function(filter) {
 };
 /**
- * @param {(ee.Feature|ee.Geometry|null)} geometry
+ * @param {!ee.Geometry} geometry
  * @return {(ee.Collection|null)}
  */
 ee.Collection.prototype.filterBounds = function(geometry) {
 };
 /**
- * @param {(Date|null|number|string)} start
+ * @param {(Date|number|string)} start
  * @param {(Date|null|number|string)=} opt_end
  * @return {(ee.Collection|null)}
  */
@@ -90,7 +90,7 @@ ee.Collection.prototype.filterMetadata = function(name, operator, value) {
 /**
  * @param {function((Object|null), (Object|null)): (Object|null)} algorithm
  * @param {*=} opt_first
- * @return {(ee.ComputedObject|null)}
+ * @return {!ee.ComputedObject}
  */
 ee.Collection.prototype.iterate = function(algorithm, opt_first) {
 };
@@ -116,11 +116,21 @@ ee.Collection.prototype.map = function(algorithm, opt_dropNulls) {
  */
 ee.Collection.prototype.sort = function(property, opt_ascending) {
 };
-ee.ComputedObject;
+/**
+ * @param {(ee.Function|null)} func
+ * @param {(Object|null)} args
+ * @param {(null|string)=} opt_varName
+ * @return {?}
+ * @extends {ee.Encodable}
+ * @constructor
+ * @template T
+ */
+ee.ComputedObject = function(func, args, opt_varName) {
+};
 /**
  * @param {(!Function|null)} func
  * @param {...*} var_args
- * @return {(ee.ComputedObject|null)}
+ * @return {!ee.ComputedObject}
  */
 ee.ComputedObject.prototype.aside = function(func, var_args) {
 };
@@ -137,9 +147,10 @@ ee.ComputedObject.prototype.evaluate = function(callback) {
 ee.ComputedObject.prototype.getInfo = function(opt_callback) {
 };
 /**
+ * @param {boolean=} legacy
  * @return {string}
  */
-ee.ComputedObject.prototype.serialize = function() {
+ee.ComputedObject.prototype.serialize = function(legacy) {
 };
 /**
  * @return {string}
@@ -147,7 +158,7 @@ ee.ComputedObject.prototype.serialize = function() {
 ee.ComputedObject.prototype.toString = function() {
 };
 /**
- * @param {{args: !Array<(ee.data.AlgorithmArgument|null)>, deprecated: (string|undefined), description: (string|undefined), name: string, returns: string}} signature
+ * @param {{args: !Array<(ee.data.AlgorithmArgument|null)>, deprecated: (string|undefined), description: (string|undefined), name: string, preview: (boolean|undefined), returns: string, sourceCodeUri: (string|undefined)}} signature
  * @param {(!Function|null)} body
  * @return {?}
  * @extends {ee.Function}
@@ -174,6 +185,18 @@ ee.Deserializer = function() {
  * @return {*}
  */
 ee.Deserializer.decode = function(json) {
+};
+/**
+ * @param {*} json
+ * @return {*}
+ */
+ee.Deserializer.decodeCloudApi = function(json) {
+};
+/**
+ * @param {string} json
+ * @return {*}
+ */
+ee.Deserializer.fromCloudApiJSON = function(json) {
 };
 /**
  * @param {string} json
@@ -221,8 +244,8 @@ ee.Feature.prototype.getInfo = function(opt_callback) {
 };
 /**
  * @param {(Object|null)=} opt_visParams
- * @param {function((Object|null), string=): ?=} opt_callback
- * @return {(ee.data.MapId|null|undefined)}
+ * @param {function(!Object, string=): ?=} opt_callback
+ * @return {(ee.data.MapId|undefined)}
  */
 ee.Feature.prototype.getMap = function(opt_visParams, opt_callback) {
 };
@@ -252,8 +275,8 @@ ee.FeatureCollection.prototype.getInfo = function(opt_callback) {
 };
 /**
  * @param {(Object|null)=} opt_visParams
- * @param {function((Object|null), string=): ?=} opt_callback
- * @return {(ee.data.MapId|null|undefined)}
+ * @param {function(!Object, string=): ?=} opt_callback
+ * @return {(ee.data.MapId|undefined)}
  */
 ee.FeatureCollection.prototype.getMap = function(opt_visParams, opt_callback) {
 };
@@ -280,14 +303,14 @@ ee.Filter = function(opt_filter) {
 ee.Filter.and = function(var_args) {
 };
 /**
- * @param {(ee.ComputedObject|null)} geometry
- * @param {(ee.ComputedObject|null|number)=} opt_errorMargin
- * @return {(ee.Filter|null)}
+ * @param {(ee.ComputedObject)} geometry
+ * @param {(ee.ComputedObject|number)=} opt_errorMargin
+ * @return {!ee.Filter}
  */
 ee.Filter.bounds = function(geometry, opt_errorMargin) {
 };
 /**
- * @param {(Date|null|number|string)} start
+ * @param {(Date|number|string)} start
  * @param {(Date|null|number|string)=} opt_end
  * @return {(ee.Filter|null)}
  */
@@ -405,6 +428,17 @@ ee.Function.prototype.call = function(var_args) {
 ee.Geometry = function(geoJson, opt_proj, opt_geodesic, opt_evenOdd) {
 };
 /**
+ * @param {number} west
+ * @param {number} south
+ * @param {number} east
+ * @param {number} north
+ * @return {?}
+ * @extends {ee.Geometry.Rectangle}
+ * @constructor
+ */
+ee.Geometry.BBox = function(west, south, east, north) {
+};
+/**
  * @param {(Array<?>|null)} coords
  * @param {(ee.Projection|null)=} opt_proj
  * @param {boolean=} opt_geodesic
@@ -491,9 +525,10 @@ ee.Geometry.Polygon = function(coords, opt_proj, opt_geodesic, opt_maxError, opt
 ee.Geometry.Rectangle = function(coords, opt_proj, opt_geodesic, opt_evenOdd) {
 };
 /**
+ * @param {boolean=} legacy
  * @return {string}
  */
-ee.Geometry.prototype.serialize = function() {
+ee.Geometry.prototype.serialize = function(legacy) {
 };
 /**
  * @return {!ee.data.GeoJSONGeometry}
@@ -554,6 +589,13 @@ ee.Image.prototype.getMap = function(opt_visParams, opt_callback) {
 };
 /**
  * @param {!Object} params
+ * @param {function((ee.data.ThumbnailId|null), string=): ?=} opt_callback
+ * @return {(ee.data.ThumbnailId|null)}
+ */
+ee.Image.prototype.getThumbId = function(params, opt_callback) {
+};
+/**
+ * @param {!Object} params
  * @param {function(string, string=): ?=} opt_callback
  * @return {(string|undefined)}
  */
@@ -567,7 +609,7 @@ ee.Image.prototype.rename = function(var_args) {
 };
 /**
  * @param {...*} var_args
- * @return {(ee.Image|null)}
+ * @return {!ee.Image}
  */
 ee.Image.prototype.select = function(var_args) {
 };
@@ -588,7 +630,7 @@ ee.Image.rgb = function(r, g, b) {
 ee.ImageCollection = function(args) {
 };
 /**
- * @return {(ee.Image|null)}
+ * @return {!ee.Image}
  */
 ee.ImageCollection.prototype.first = function() {
 };
@@ -597,7 +639,7 @@ ee.ImageCollection.prototype.first = function() {
  * @param {function(string, string=): ?=} opt_callback
  * @return {(string|undefined)}
  */
-ee.ImageCollection.prototype.getAnimatedThumbURL = function(params, opt_callback) {
+ee.ImageCollection.prototype.getFilmstripThumbURL = function(params, opt_callback) {
 };
 /**
  * @param {function(!ee.data.ImageCollectionDescription, string=): ?=} opt_callback
@@ -607,8 +649,8 @@ ee.ImageCollection.prototype.getInfo = function(opt_callback) {
 };
 /**
  * @param {(Object|null)=} opt_visParams
- * @param {function((Object|null), string=): ?=} opt_callback
- * @return {(ee.data.MapId|null|undefined)}
+ * @param {function(!Object, string=): ?=} opt_callback
+ * @return {(ee.data.MapId|undefined)}
  */
 ee.ImageCollection.prototype.getMap = function(opt_visParams, opt_callback) {
 };
@@ -617,7 +659,7 @@ ee.ImageCollection.prototype.getMap = function(opt_visParams, opt_callback) {
  * @param {function(string, string=): ?=} opt_callback
  * @return {(string|undefined)}
  */
-ee.ImageCollection.prototype.getTiledThumbURL = function(params, opt_callback) {
+ee.ImageCollection.prototype.getVideoThumbURL = function(params, opt_callback) {
 };
 /**
  * @param {!Array<(number|string)>} selectors
@@ -693,10 +735,17 @@ ee.MapLayerOverlay.prototype.setOpacity = function(opacity) {
  */
 ee.MapTileManager = function() {
 };
-ee.Number;
+/**
+ * @param {(Object|number)} number
+ * @return {?}
+ * @extends {ee.ComputedObject}
+ * @constructor
+ */
+ee.Number = function(number) {
+};
 /**
  * @param {string} path
- * @param {{args: !Array<(ee.data.AlgorithmArgument|null)>, deprecated: (string|undefined), description: (string|undefined), name: string, returns: string}} signature
+ * @param {{args: !Array<(ee.data.AlgorithmArgument|null)>, deprecated: (string|undefined), description: (string|undefined), name: string, preview: (boolean|undefined), returns: string, sourceCodeUri: (string|undefined)}} signature
  * @return {?}
  * @extends {ee.Function}
  * @constructor
@@ -718,7 +767,7 @@ ee.Serializer.encode = function(obj, opt_isCompound) {
 };
 /**
  * @param {*} obj
- * @return {{result: (null|string), values: (Object<string,{argumentReference: (null|string), arrayValue: (null|{values: (Array<?>|null)}), bytesValue: (null|string), constantValue: *, dictionaryValue: (null|{values: (Object<string,?>|null)}), functionDefinitionValue: (null|{argumentNames: (Array<string>|null), body: (null|string)}), functionInvocationValue: (null|{arguments: (Object<string,?>|null), functionName: (null|string), functionReference: (null|string)}), integerValue: (null|string), valueReference: (null|string)}>|null)}}
+ * @return {!Object}
  */
 ee.Serializer.encodeCloudApi = function(obj) {
 };
@@ -727,6 +776,12 @@ ee.Serializer.encodeCloudApi = function(obj) {
  * @return {*}
  */
 ee.Serializer.encodeCloudApiPretty = function(obj) {
+};
+/**
+ * @param {*} obj
+ * @return {string}
+ */
+ee.Serializer.toCloudApiJSON = function(obj) {
 };
 /**
  * @param {*} obj
@@ -746,14 +801,27 @@ ee.Serializer.toReadableCloudApiJSON = function(obj) {
  */
 ee.Serializer.toReadableJSON = function(obj) {
 };
-ee.String;
+/**
+ * @param {(Object|string)} string
+ * @return {?}
+ * @extends {ee.ComputedObject}
+ * @constructor
+ */
+ee.String = function(string) {
+};
 ee.TILE_SIZE;
 /** @type {{}} */
 ee.Terrain = {};
+ee.api;
+ee.api.EarthEngineAsset;
+ee.api.Image;
+ee.api.ListAssetsResponse;
+ee.api.ListImagesResponse;
+ee.api.Operation;
 /**
  * @param {(ee.Function|null|string)} func
  * @param {(Object|null)} namedArgs
- * @return {(ee.ComputedObject|null)}
+ * @return {!ee.ComputedObject}
  */
 ee.apply = function(func, namedArgs) {
 };
@@ -769,7 +837,7 @@ ee.batch.Export.image;
  * @param {(ee.Geometry.LinearRing|ee.Geometry.Polygon|null|string)=} opt_region
  * @param {number=} opt_scale
  * @param {string=} opt_crs
- * @param {string=} opt_crsTransform
+ * @param {(Array<number>|string)=} opt_crsTransform
  * @param {number=} opt_maxPixels
  * @return {!ee.batch.ExportTask}
  */
@@ -784,13 +852,13 @@ ee.batch.Export.image.toAsset = function(image, opt_description, opt_assetId, op
  * @param {(ee.Geometry.LinearRing|ee.Geometry.Polygon|null|string)=} opt_region
  * @param {number=} opt_scale
  * @param {string=} opt_crs
- * @param {string=} opt_crsTransform
+ * @param {(Array<number>|string)=} opt_crsTransform
  * @param {number=} opt_maxPixels
  * @param {number=} opt_shardSize
  * @param {(Array<number>|null|number)=} opt_fileDimensions
  * @param {boolean=} opt_skipEmptyTiles
  * @param {string=} opt_fileFormat
- * @param {(null|{cloudOptimized: (boolean|undefined), collapseBands: (boolean|undefined), compressed: (boolean|undefined), defaultValue: (number|undefined), fileDimensions: (Array<number>|undefined), kernelSize: (Array<number>|undefined), maskedThreshold: (number|undefined), maxFileSize: (number|undefined), patchDimensions: (Array<number>|undefined), sequenceData: (boolean|undefined), tensorDepths: (Array<number>|undefined)})=} opt_formatOptions
+ * @param {(null|{cloudOptimized: (boolean|undefined), collapseBands: (boolean|undefined), compressed: (boolean|undefined), defaultValue: (number|undefined), fileDimensions: (Array<number>|undefined), kernelSize: (Array<number>|undefined), maskedThreshold: (number|undefined), maxFileSize: (number|undefined), patchDimensions: (Array<number>|undefined), sequenceData: (boolean|undefined), tensorDepths: (Object|undefined)})=} opt_formatOptions
  * @return {!ee.batch.ExportTask}
  */
 ee.batch.Export.image.toCloudStorage = function(image, opt_description, opt_bucket, opt_fileNamePrefix, opt_dimensions, opt_region, opt_scale, opt_crs, opt_crsTransform, opt_maxPixels, opt_shardSize, opt_fileDimensions, opt_skipEmptyTiles, opt_fileFormat, opt_formatOptions) {
@@ -804,13 +872,13 @@ ee.batch.Export.image.toCloudStorage = function(image, opt_description, opt_buck
  * @param {(ee.Geometry.LinearRing|ee.Geometry.Polygon|null|string)=} opt_region
  * @param {number=} opt_scale
  * @param {string=} opt_crs
- * @param {string=} opt_crsTransform
+ * @param {(Array<number>|string)=} opt_crsTransform
  * @param {number=} opt_maxPixels
  * @param {number=} opt_shardSize
  * @param {(Array<number>|null|number)=} opt_fileDimensions
  * @param {boolean=} opt_skipEmptyTiles
  * @param {string=} opt_fileFormat
- * @param {(null|{cloudOptimized: (boolean|undefined), collapseBands: (boolean|undefined), compressed: (boolean|undefined), defaultValue: (number|undefined), fileDimensions: (Array<number>|undefined), kernelSize: (Array<number>|undefined), maskedThreshold: (number|undefined), maxFileSize: (number|undefined), patchDimensions: (Array<number>|undefined), sequenceData: (boolean|undefined), tensorDepths: (Array<number>|undefined)})=} opt_formatOptions
+ * @param {(null|{cloudOptimized: (boolean|undefined), collapseBands: (boolean|undefined), compressed: (boolean|undefined), defaultValue: (number|undefined), fileDimensions: (Array<number>|undefined), kernelSize: (Array<number>|undefined), maskedThreshold: (number|undefined), maxFileSize: (number|undefined), patchDimensions: (Array<number>|undefined), sequenceData: (boolean|undefined), tensorDepths: (Object|undefined)})=} opt_formatOptions
  * @return {!ee.batch.ExportTask}
  */
 ee.batch.Export.image.toDrive = function(image, opt_description, opt_folder, opt_fileNamePrefix, opt_dimensions, opt_region, opt_scale, opt_crs, opt_crsTransform, opt_maxPixels, opt_shardSize, opt_fileDimensions, opt_skipEmptyTiles, opt_fileFormat, opt_formatOptions) {
@@ -875,7 +943,7 @@ ee.batch.Export.video;
  * @param {(ee.Geometry.LinearRing|ee.Geometry.Polygon|null|string)=} opt_region
  * @param {number=} opt_scale
  * @param {string=} opt_crs
- * @param {string=} opt_crsTransform
+ * @param {(Array<number>|string)=} opt_crsTransform
  * @param {number=} opt_maxPixels
  * @param {number=} opt_maxFrames
  * @return {!ee.batch.ExportTask}
@@ -892,7 +960,7 @@ ee.batch.Export.video.toCloudStorage = function(collection, opt_description, opt
  * @param {(ee.Geometry.LinearRing|ee.Geometry.Polygon|null|string)=} opt_region
  * @param {number=} opt_scale
  * @param {string=} opt_crs
- * @param {string=} opt_crsTransform
+ * @param {(Array<number>|string)=} opt_crsTransform
  * @param {number=} opt_maxPixels
  * @param {number=} opt_maxFrames
  * @return {!ee.batch.ExportTask}
@@ -912,9 +980,18 @@ ee.batch.Export.videoMap;
  * @param {number=} opt_scale
  * @param {(ee.Geometry.LinearRing|ee.Geometry.Polygon|null|string)=} opt_region
  * @param {boolean=} opt_skipEmptyTiles
+ * @param {number=} opt_minTimeMachineZoomSubset
+ * @param {number=} opt_maxTimeMachineZoomSubset
+ * @param {number=} opt_tileWidth
+ * @param {number=} opt_tileHeight
+ * @param {number=} opt_tileStride
+ * @param {string=} opt_videoFormat
+ * @param {string=} opt_version
+ * @param {string=} opt_mapsApiKey
+ * @param {(Array<string>|null)=} opt_bucketCorsUris
  * @return {!ee.batch.ExportTask}
  */
-ee.batch.Export.videoMap.toCloudStorage = function(collection, opt_description, opt_bucket, opt_fileNamePrefix, opt_framesPerSecond, opt_writePublicTiles, opt_minZoom, opt_maxZoom, opt_scale, opt_region, opt_skipEmptyTiles) {
+ee.batch.Export.videoMap.toCloudStorage = function(collection, opt_description, opt_bucket, opt_fileNamePrefix, opt_framesPerSecond, opt_writePublicTiles, opt_minZoom, opt_maxZoom, opt_scale, opt_region, opt_skipEmptyTiles, opt_minTimeMachineZoomSubset, opt_maxTimeMachineZoomSubset, opt_tileWidth, opt_tileHeight, opt_tileStride, opt_videoFormat, opt_version, opt_mapsApiKey, opt_bucketCorsUris) {
 };
 ee.batch.ExportTask;
 ee.batch.ExportTask.prototype.id;
@@ -928,7 +1005,7 @@ ee.batch.ExportTask.prototype.start = function(opt_success, opt_error) {
 /**
  * @param {(ee.Function|null|string)} func
  * @param {...*} var_args
- * @return {(ee.ComputedObject|null)}
+ * @return {!ee.ComputedObject}
  */
 ee.call = function(func, var_args) {
 };
@@ -970,24 +1047,35 @@ ee.data.authenticateViaPopup = function(opt_success, opt_error) {
 ee.data.authenticateViaPrivateKey = function(privateKey, opt_success, opt_error, opt_extraScopes) {
 };
 /**
+ * @param {(Array<string>|string)} operationName
+ * @param {function((Object|null), string=): ?=} opt_callback
+ * @return {undefined}
+ */
+ee.data.cancelOperation = function(operationName, opt_callback) {
+};
+/**
  * @param {string} taskId
  * @param {function((ee.data.ProcessingResponse|null), string=): ?=} opt_callback
  * @return {(Array<(ee.data.TaskStatus|null)>|null)}
  */
 ee.data.cancelTask = function(taskId, opt_callback) {
 };
+ee.data.clearAuthToken;
 /**
- * @return {undefined}
+ * @param {*} obj
+ * @param {function(*): ?=} opt_callback
+ * @return {(Object|null)}
  */
-ee.data.clearAuthToken = function() {
+ee.data.computeValue = function(obj, opt_callback) {
 };
 /**
  * @param {string} sourceId
  * @param {string} destinationId
+ * @param {boolean=} opt_overwrite
  * @param {function((Object|null), string=): ?=} opt_callback
  * @return {undefined}
  */
-ee.data.copyAsset = function(sourceId, destinationId, opt_callback) {
+ee.data.copyAsset = function(sourceId, destinationId, opt_overwrite, opt_callback) {
 };
 /**
  * @param {(Object|string)} value
@@ -1009,7 +1097,7 @@ ee.data.createAssetHome = function(requestedId, opt_callback) {
 /**
  * @param {string} path
  * @param {boolean=} opt_force
- * @param {function(!Object, string=): ?=} opt_callback
+ * @param {function((Object|null), string=): ?=} opt_callback
  * @return {(Object|null)}
  */
 ee.data.createFolder = function(path, opt_force, opt_callback) {
@@ -1022,21 +1110,22 @@ ee.data.createFolder = function(path, opt_force, opt_callback) {
 ee.data.deleteAsset = function(assetId, opt_callback) {
 };
 /**
- * @return {(null|string)}
+ * @param {string} id
+ * @param {function((Object|null), string=): ?=} opt_callback
+ * @return {(Object|null)}
  */
-ee.data.getApiBaseUrl = function() {
+ee.data.getAsset = function(id, opt_callback) {
 };
-ee.data.getAsset;
 /**
  * @param {string} assetId
- * @param {function(!ee.data.AssetAcl, string=): ?=} opt_callback
+ * @param {function((ee.data.AssetAcl|null), string=): ?=} opt_callback
  * @return {(ee.data.AssetAcl|null)}
  */
 ee.data.getAssetAcl = function(assetId, opt_callback) {
 };
 /**
  * @param {string} rootId
- * @param {function(!ee.data.AssetQuotaDetails, string=): ?=} opt_callback
+ * @param {function((ee.data.AssetQuotaDetails|null), string=): ?=} opt_callback
  * @return {(ee.data.AssetQuotaDetails|null)}
  */
 ee.data.getAssetRootQuota = function(rootId, opt_callback) {
@@ -1047,32 +1136,22 @@ ee.data.getAssetRootQuota = function(rootId, opt_callback) {
  */
 ee.data.getAssetRoots = function(opt_callback) {
 };
-/**
- * @return {(null|string)}
- */
-ee.data.getAuthClientId = function() {
-};
-/**
- * @return {!Array<string>}
- */
-ee.data.getAuthScopes = function() {
-};
-/**
- * @return {(null|string)}
- */
-ee.data.getAuthToken = function() {
-};
-/**
- * @return {boolean}
- */
-ee.data.getCloudApiEnabled = function() {
-};
+ee.data.getAuthClientId;
+ee.data.getAuthScopes;
+ee.data.getAuthToken;
 /**
  * @param {!Object} params
  * @param {function((ee.data.DownloadId|null), string=): ?=} opt_callback
  * @return {(ee.data.DownloadId|null)}
  */
 ee.data.getDownloadId = function(params, opt_callback) {
+};
+/**
+ * @param {!ee.data.FilmstripThumbnailOptions} params
+ * @param {function((ee.data.ThumbnailId|null), string=): ?=} opt_callback
+ * @return {(ee.data.ThumbnailId|null)}
+ */
+ee.data.getFilmstripThumbId = function(params, opt_callback) {
 };
 ee.data.getInfo;
 /**
@@ -1084,14 +1163,21 @@ ee.data.getList = function(params, opt_callback) {
 };
 /**
  * @param {!ee.data.ImageVisualizationParameters} params
- * @param {function(!ee.data.RawMapId, string=): ?=} opt_callback
+ * @param {function((ee.data.RawMapId|null), string=): ?=} opt_callback
  * @return {(ee.data.RawMapId|null)}
  */
 ee.data.getMapId = function(params, opt_callback) {
 };
 /**
+ * @param {(Array<string>|string)} operationName
+ * @param {function((Object|null), string=): ?=} opt_callback
+ * @return {(Object<string,ee.api.Operation>|ee.api.Operation|null)}
+ */
+ee.data.getOperation = function(operationName, opt_callback) {
+};
+/**
  * @param {(Object|null)} params
- * @param {function(!ee.data.DownloadId, string=): ?=} opt_callback
+ * @param {function((ee.data.DownloadId|null), string=): ?=} opt_callback
  * @return {(ee.data.DownloadId|null)}
  */
 ee.data.getTableDownloadId = function(params, opt_callback) {
@@ -1118,56 +1204,56 @@ ee.data.getTaskStatus = function(taskId, opt_callback) {
 };
 /**
  * @param {!ee.data.ThumbnailOptions} params
- * @param {function(!ee.data.ThumbnailId, string=): ?=} opt_callback
+ * @param {function((ee.data.ThumbnailId|null), string=): ?=} opt_callback
  * @return {(ee.data.ThumbnailId|null)}
  */
 ee.data.getThumbId = function(params, opt_callback) {
 };
 /**
- * @return {(null|string)}
- */
-ee.data.getTileBaseUrl = function() {
-};
-/**
- * @param {!ee.data.RawMapId} mapid
+ * @param {!ee.data.RawMapId} id
  * @param {number} x
  * @param {number} y
  * @param {number} z
  * @return {string}
  */
-ee.data.getTileUrl = function(mapid, x, y, z) {
+ee.data.getTileUrl = function(id, x, y, z) {
 };
 /**
- * @param {(Object|null)} params
- * @param {function(?, string=): ?=} opt_callback
- * @return {?}
+ * @param {!ee.data.VideoThumbnailOptions} params
+ * @param {function((ee.data.ThumbnailId|null), string=): ?=} opt_callback
+ * @return {(ee.data.ThumbnailId|null)}
  */
-ee.data.getValue = function(params, opt_callback) {
+ee.data.getVideoThumbId = function(params, opt_callback) {
 };
 /**
- * @return {(null|string)}
+ * @param {string} parent
+ * @param {!ee.api.ProjectsAssetsListAssetsNamedParameters=} params
+ * @param {function((ee.api.ListAssetsResponse|null), string=): ?=} opt_callback
+ * @return {(ee.api.ListAssetsResponse|null)}
  */
-ee.data.getXsrfToken = function() {
+ee.data.listAssets = function(parent, params, opt_callback) {
 };
 /**
- * @param {!ee.rpc_proto.ListAssetsRequest} body
- * @param {function({assets: (Array<{bands: (Array<{dataType: (null|{dimensionsCount: (null|number), precision: (null|string), range: (null|{max: (null|number), min: (null|number)})}), grid: (null|{affineTransform: (null|{scaleX: (null|number), scaleY: (null|number), shearX: (null|number), shearY: (null|number), translateX: (null|number), translateY: (null|number)}), crsCode: (null|string), crsWkt: (null|string), dimensions: (null|{height: (null|number), width: (null|number)})}), id: (null|string), missingData: (null|{values: (Array<number>|null)}), pyramidingPolicy: (null|string), tilesets: (Array<{fileIndexes: (Array<number>|null), firstTileIndex: (null|number), tilesPerFile: (null|number)}>|null)}>|null), endTime: (null|string), geometry: (Object<string,*>|null), id: (null|string), name: (null|string), path: (null|string), properties: (Object<string,*>|null), quota: (null|{assetCount: (null|string), maxAssetCount: (null|string), maxSizeBytes: (null|string), sizeBytes: (null|string)}), sizeBytes: (null|string), startTime: (null|string), tilestoreEntry: (null|{pathPrefix: (null|string), sources: (Array<{headerSizeBytes: (null|number), pathSuffix: (null|string)}>|null)}), time: (null|string), type: (null|string), updateTime: (null|string)}>|null), nextPageToken: (null|string)}, string=): ?=} opt_callback
- * @return {(null|{assets: (Array<{bands: (Array<{dataType: (null|{dimensionsCount: (null|number), precision: (null|string), range: (null|{max: (null|number), min: (null|number)})}), grid: (null|{affineTransform: (null|{scaleX: (null|number), scaleY: (null|number), shearX: (null|number), shearY: (null|number), translateX: (null|number), translateY: (null|number)}), crsCode: (null|string), crsWkt: (null|string), dimensions: (null|{height: (null|number), width: (null|number)})}), id: (null|string), missingData: (null|{values: (Array<number>|null)}), pyramidingPolicy: (null|string), tilesets: (Array<{fileIndexes: (Array<number>|null), firstTileIndex: (null|number), tilesPerFile: (null|number)}>|null)}>|null), endTime: (null|string), geometry: (Object<string,*>|null), id: (null|string), name: (null|string), path: (null|string), properties: (Object<string,*>|null), quota: (null|{assetCount: (null|string), maxAssetCount: (null|string), maxSizeBytes: (null|string), sizeBytes: (null|string)}), sizeBytes: (null|string), startTime: (null|string), tilestoreEntry: (null|{pathPrefix: (null|string), sources: (Array<{headerSizeBytes: (null|number), pathSuffix: (null|string)}>|null)}), time: (null|string), type: (null|string), updateTime: (null|string)}>|null), nextPageToken: (null|string)})}
+ * @param {string=} project
+ * @param {function((ee.api.ListAssetsResponse|null), string=): ?=} opt_callback
+ * @return {(ee.api.ListAssetsResponse|null)}
  */
-ee.data.listAssets = function(body, opt_callback) {
+ee.data.listBuckets = function(project, opt_callback) {
 };
 /**
- * @param {function({buckets: (Array<{bands: (Array<{dataType: (null|{dimensionsCount: (null|number), precision: (null|string), range: (null|{max: (null|number), min: (null|number)})}), grid: (null|{affineTransform: (null|{scaleX: (null|number), scaleY: (null|number), shearX: (null|number), shearY: (null|number), translateX: (null|number), translateY: (null|number)}), crsCode: (null|string), crsWkt: (null|string), dimensions: (null|{height: (null|number), width: (null|number)})}), id: (null|string), missingData: (null|{values: (Array<number>|null)}), pyramidingPolicy: (null|string), tilesets: (Array<{fileIndexes: (Array<number>|null), firstTileIndex: (null|number), tilesPerFile: (null|number)}>|null)}>|null), endTime: (null|string), geometry: (Object<string,*>|null), id: (null|string), name: (null|string), path: (null|string), properties: (Object<string,*>|null), quota: (null|{assetCount: (null|string), maxAssetCount: (null|string), maxSizeBytes: (null|string), sizeBytes: (null|string)}), sizeBytes: (null|string), startTime: (null|string), tilestoreEntry: (null|{pathPrefix: (null|string), sources: (Array<{headerSizeBytes: (null|number), pathSuffix: (null|string)}>|null)}), time: (null|string), type: (null|string), updateTime: (null|string)}>|null)}, string=): ?=} opt_callback
- * @return {(null|{buckets: (Array<{bands: (Array<{dataType: (null|{dimensionsCount: (null|number), precision: (null|string), range: (null|{max: (null|number), min: (null|number)})}), grid: (null|{affineTransform: (null|{scaleX: (null|number), scaleY: (null|number), shearX: (null|number), shearY: (null|number), translateX: (null|number), translateY: (null|number)}), crsCode: (null|string), crsWkt: (null|string), dimensions: (null|{height: (null|number), width: (null|number)})}), id: (null|string), missingData: (null|{values: (Array<number>|null)}), pyramidingPolicy: (null|string), tilesets: (Array<{fileIndexes: (Array<number>|null), firstTileIndex: (null|number), tilesPerFile: (null|number)}>|null)}>|null), endTime: (null|string), geometry: (Object<string,*>|null), id: (null|string), name: (null|string), path: (null|string), properties: (Object<string,*>|null), quota: (null|{assetCount: (null|string), maxAssetCount: (null|string), maxSizeBytes: (null|string), sizeBytes: (null|string)}), sizeBytes: (null|string), startTime: (null|string), tilestoreEntry: (null|{pathPrefix: (null|string), sources: (Array<{headerSizeBytes: (null|number), pathSuffix: (null|string)}>|null)}), time: (null|string), type: (null|string), updateTime: (null|string)}>|null)})}
+ * @param {string} parent
+ * @param {!ee.api.ProjectsAssetsListImagesNamedParameters=} params
+ * @param {function((ee.api.ListImagesResponse|null), string=): ?=} opt_callback
+ * @return {(ee.api.ListImagesResponse|null)}
  */
-ee.data.listBuckets = function(opt_callback) {
+ee.data.listImages = function(parent, params, opt_callback) {
 };
 /**
- * @param {!ee.rpc_proto.ListImagesRequest} body
- * @param {function({assets: (Array<{bands: (Array<{dataType: (null|{dimensionsCount: (null|number), precision: (null|string), range: (null|{max: (null|number), min: (null|number)})}), grid: (null|{affineTransform: (null|{scaleX: (null|number), scaleY: (null|number), shearX: (null|number), shearY: (null|number), translateX: (null|number), translateY: (null|number)}), crsCode: (null|string), crsWkt: (null|string), dimensions: (null|{height: (null|number), width: (null|number)})}), id: (null|string), missingData: (null|{values: (Array<number>|null)}), pyramidingPolicy: (null|string), tilesets: (Array<{fileIndexes: (Array<number>|null), firstTileIndex: (null|number), tilesPerFile: (null|number)}>|null)}>|null), endTime: (null|string), geometry: (Object<string,*>|null), id: (null|string), name: (null|string), path: (null|string), properties: (Object<string,*>|null), quota: (null|{assetCount: (null|string), maxAssetCount: (null|string), maxSizeBytes: (null|string), sizeBytes: (null|string)}), sizeBytes: (null|string), startTime: (null|string), tilestoreEntry: (null|{pathPrefix: (null|string), sources: (Array<{headerSizeBytes: (null|number), pathSuffix: (null|string)}>|null)}), time: (null|string), type: (null|string), updateTime: (null|string)}>|null), nextPageToken: (null|string)}, string=): ?=} opt_callback
- * @return {(null|{assets: (Array<{bands: (Array<{dataType: (null|{dimensionsCount: (null|number), precision: (null|string), range: (null|{max: (null|number), min: (null|number)})}), grid: (null|{affineTransform: (null|{scaleX: (null|number), scaleY: (null|number), shearX: (null|number), shearY: (null|number), translateX: (null|number), translateY: (null|number)}), crsCode: (null|string), crsWkt: (null|string), dimensions: (null|{height: (null|number), width: (null|number)})}), id: (null|string), missingData: (null|{values: (Array<number>|null)}), pyramidingPolicy: (null|string), tilesets: (Array<{fileIndexes: (Array<number>|null), firstTileIndex: (null|number), tilesPerFile: (null|number)}>|null)}>|null), endTime: (null|string), geometry: (Object<string,*>|null), id: (null|string), name: (null|string), path: (null|string), properties: (Object<string,*>|null), quota: (null|{assetCount: (null|string), maxAssetCount: (null|string), maxSizeBytes: (null|string), sizeBytes: (null|string)}), sizeBytes: (null|string), startTime: (null|string), tilestoreEntry: (null|{pathPrefix: (null|string), sources: (Array<{headerSizeBytes: (null|number), pathSuffix: (null|string)}>|null)}), time: (null|string), type: (null|string), updateTime: (null|string)}>|null), nextPageToken: (null|string)})}
+ * @param {number=} opt_limit
+ * @param {function((Array<ee.api.Operation>|null)=, string=): ?=} opt_callback
+ * @return {(Array<ee.api.Operation>|null)}
  */
-ee.data.listImages = function(body, opt_callback) {
+ee.data.listOperations = function(opt_limit, opt_callback) {
 };
 /**
  * @param {!ee.data.DownloadId} id
@@ -1194,19 +1280,14 @@ ee.data.makeThumbUrl = function(id) {
  */
 ee.data.newTaskId = function(opt_count, opt_callback) {
 };
+ee.data.refreshAuthToken;
 /**
  * @param {string} sourceId
  * @param {string} destinationId
- * @param {function(!Object, string=): ?=} opt_callback
+ * @param {function((Object|null), string=): ?=} opt_callback
  * @return {undefined}
  */
 ee.data.renameAsset = function(sourceId, destinationId, opt_callback) {
-};
-/**
- * @param {string} apiKey
- * @return {undefined}
- */
-ee.data.setApiKey = function(apiKey) {
 };
 /**
  * @param {string} assetId
@@ -1224,42 +1305,16 @@ ee.data.setAssetAcl = function(assetId, aclUpdate, opt_callback) {
  */
 ee.data.setAssetProperties = function(assetId, properties, opt_callback) {
 };
+ee.data.setAuthToken;
+ee.data.setAuthTokenRefresher;
+ee.data.setDeadline;
 /**
- * @param {string} clientId
- * @param {string} tokenType
- * @param {string} accessToken
- * @param {number} expiresIn
- * @param {!Array<string>=} opt_extraScopes
- * @param {function(): ?=} opt_callback
- * @param {boolean=} opt_updateAuthLibrary
+ * @param {(function(!ee.api.Expression, !Object=): !ee.api.Expression|null)} augmenter
  * @return {undefined}
  */
-ee.data.setAuthToken = function(clientId, tokenType, accessToken, expiresIn, opt_extraScopes, opt_callback, opt_updateAuthLibrary) {
+ee.data.setExpressionAugmenter = function(augmenter) {
 };
-/**
- * @param {(function(!ee.data.AuthArgs, function(!ee.data.AuthResponse): ?): ?|null)} refresher
- * @return {undefined}
- */
-ee.data.setAuthTokenRefresher = function(refresher) {
-};
-/**
- * @param {boolean} enable
- * @return {undefined}
- */
-ee.data.setCloudApiEnabled = function(enable) {
-};
-/**
- * @param {number} milliseconds
- * @return {undefined}
- */
-ee.data.setDeadline = function(milliseconds) {
-};
-/**
- * @param {(function(!goog.Uri.QueryData, string): !goog.Uri.QueryData|null)} augmenter
- * @return {undefined}
- */
-ee.data.setParamAugmenter = function(augmenter) {
-};
+ee.data.setParamAugmenter;
 /**
  * @param {string} taskId
  * @param {!ee.data.IngestionRequest} request
@@ -1285,20 +1340,21 @@ ee.data.startProcessing = function(taskId, params, opt_callback) {
 ee.data.startTableIngestion = function(taskId, request, opt_callback) {
 };
 /**
+ * @param {string} assetId
+ * @param {!ee.api.EarthEngineAsset} asset
+ * @param {(Array<string>|null)} updateFields
+ * @param {function((Object|null), string=): ?=} opt_callback
+ * @return {(Object|null)}
+ */
+ee.data.updateAsset = function(assetId, asset, updateFields, opt_callback) {
+};
+/**
  * @param {(Array<string>|string)} taskId
  * @param {string} action
  * @param {function((ee.data.ProcessingResponse|null), string=): ?=} opt_callback
  * @return {(Array<ee.data.TaskStatus>|null)}
  */
 ee.data.updateTask = function(taskId, action, opt_callback) {
-};
-/**
- * @param {(function(string): ?|null)} hook
- * @param {function(): *} body
- * @param {*=} opt_this
- * @return {*}
- */
-ee.data.withProfiling = function(hook, body, opt_this) {
 };
 /**
  * @param {(null|string)=} opt_baseurl
@@ -1311,8 +1367,8 @@ ee.data.withProfiling = function(hook, body, opt_this) {
 ee.initialize = function(opt_baseurl, opt_tileurl, opt_successCallback, opt_errorCallback, opt_xsrfToken) {
 };
 /**
- @const
- @suppress {const,duplicate}
+ * @const
+ * @suppress {const,duplicate}
  */
 ee.layers = {};
 /**

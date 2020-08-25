@@ -15,6 +15,7 @@ goog.require('ee.Types');
 goog.require('ee.arguments');
 goog.require('ee.data');
 goog.require('ee.data.images');
+goog.require('ee.rpc_node');
 goog.require('goog.array');
 goog.require('goog.json');
 goog.require('goog.object');
@@ -25,8 +26,8 @@ goog.require('goog.object');
  * An object to represent an Earth Engine image. This constructor accepts a
  * variety of arguments:
  *   - A string: an EarthEngine asset id,
- *   - A string and a number - an EarthEngine asset id and version,
- *   - A number or EEArray: creates a constant image,
+ *   - A string and a number: an EarthEngine asset id and version,
+ *   - A number or ee.Array: creates a constant image,
  *   - A list: creates an image out of each list element and combines them
  *     into a single image,
  *   - An ee.Image: returns the argument,
@@ -49,7 +50,7 @@ ee.Image = function(opt_args) {
   ee.Image.initialize();
 
   var argCount = arguments.length;
-  if (argCount == 0 || (argCount == 1 && !goog.isDef(opt_args))) {
+  if (argCount == 0 || (argCount == 1 && opt_args === undefined)) {
     ee.Image.base(this, 'constructor', new ee.ApiFunction('Image.mask'), {
       'image': new ee.Image(0),
       'mask': new ee.Image(0)
@@ -62,7 +63,7 @@ ee.Image = function(opt_args) {
     } else if (ee.Types.isString(opt_args)) {
       // An ID.
       ee.Image.base(this, 'constructor', new ee.ApiFunction('Image.load'), {'id': opt_args});
-    } else if (goog.isArray(opt_args)) {
+    } else if (Array.isArray(opt_args)) {
       // Make an image out of each element.
       return ee.Image.combine_(goog.array.map(
           /** @type {Array.<*>} */ (opt_args),
@@ -152,16 +153,16 @@ ee.Image.prototype.getInfo = function(opt_callback) {
 
 
 /**
- * An imperative function that returns a map id and token, suitable for
+ * An imperative function that returns a map id and optional token, suitable for
  * generating a Map overlay.
  *
  * @param {!ee.data.ImageVisualizationParameters=} opt_visParams
  *     The visualization parameters.
  * @param {function(!ee.data.MapId, string=)=} opt_callback An async callback.
  *     If not supplied, the call is made synchronously.
- * @return {!ee.data.MapId|undefined} An object containing a mapid string, an
- *     access token plus this object, or an error message. Or undefined if a
- *     callback was specified.
+ * @return {!ee.data.MapId|undefined} An object which may be passed to
+ *     ee.data.getTileUrl or ui.Map.addLayer. Undefined if a callback was
+ *     specified.
  * @export
  */
 ee.Image.prototype.getMap = function(opt_visParams, opt_callback) {
@@ -191,19 +192,21 @@ ee.Image.prototype.getMap = function(opt_visParams, opt_callback) {
   }
 };
 
+
 /**
- * Get a Download URL
+ * Get a Download URL for the image, which always downloads a zipped GeoTIFF.
+ * Use getThumbURL for other file formats like PNG, JPG, or raw GeoTIFF.
  * @param {Object} params An object containing download options with the
  *     following possible values:
  *   - name: a base name to use when constructing filenames.
- *   - bands: a description of the bands to download. Must be a list of
+ *   - bands: a description of the bands to download. Must be an array of
  *         dictionaries, each with the following keys:
  *     + id: the name of the band, a string, required.
  *     + crs: an optional CRS string defining the band projection.
- *     + crs_transform: an optional list of 6 numbers specifying an affine
+ *     + crs_transform: an optional array of 6 numbers specifying an affine
  *           transform from the specified CRS, in row-major order:
  *           [xScale, xShearing, xTranslation, yShearing, yScale, yTranslation]
- *     + dimensions: an optional list of two integers defining the width and
+ *     + dimensions: an optional array of two integers defining the width and
  *           height to which the band is cropped.
  *     + scale: an optional number, specifying the scale in meters of the band;
  *              ignored if crs and crs_transform is specified.
@@ -217,6 +220,9 @@ ee.Image.prototype.getMap = function(opt_visParams, opt_callback) {
  *         ignored if crs and crs_transform is specified.
  *   - region: a polygon specifying a region to download; ignored if crs
  *         and crs_transform is specified.
+ *   - filePerBand: Whether to produce a different GeoTIFF per band (boolean).
+ *         Defaults to true. If false, a single GeoTIFF is produced and all
+ *         band-level transformations will be ignored.
  * @param {function(string?, string=)=} opt_callback An optional
  *     callback. If not supplied, the call is made synchronously.
  * @return {string|undefined} Returns a download URL, or undefined if a callback
@@ -224,13 +230,14 @@ ee.Image.prototype.getMap = function(opt_visParams, opt_callback) {
  * @export
  */
 ee.Image.prototype.getDownloadURL = function(params, opt_callback) {
-  var args = ee.arguments.extractFromFunction(
+  const args = ee.arguments.extractFromFunction(
       ee.Image.prototype.getDownloadURL, arguments);
-  var request = args['params'] ? goog.object.clone(args['params']) : {};
-  request['image'] = this.serialize();
+  const request = args['params'] ? goog.object.clone(args['params']) : {};
+  request['image'] =
+      ee.data.getCloudApiEnabled() ? this : this.serialize(/* legacy = */ true);
   if (args['callback']) {
-    var callback = args['callback'];
-    ee.data.getDownloadId(request, function(downloadId, error) {
+    const callback = args['callback'];
+    ee.data.getDownloadId(request, (downloadId, error) => {
       if (downloadId) {
         callback(ee.data.makeDownloadUrl(downloadId));
       } else {
@@ -245,6 +252,57 @@ ee.Image.prototype.getDownloadURL = function(params, opt_callback) {
 
 
 /**
+ * Applies transformations and returns the thumbId.
+ * @param {!Object} params Parameters identical to ee.data.getMapId, plus,
+ * optionally:
+ *   - dimensions (a number or pair of numbers in format WIDTHxHEIGHT) Maximum
+ *         dimensions of the thumbnail to render, in pixels. If only one
+ *         number is passed, it is used as the maximum, and the other
+ *         dimension is computed by proportional scaling.
+ *   - region Geospatial region of the image to render, it may be an ee.Geometry,
+ *         GeoJSON, or an array of lat/lon points (E,S,W,N). If not set the
+ *         default is the bounds image.
+ * @param {function(?ee.data.ThumbnailId, string=)=} opt_callback
+ *     An optional callback. If not supplied, the call is made synchronously.
+ * @return {?ee.data.ThumbnailId} The thumb ID and optional token, or null if a
+ *     callback is specified.
+ * @export
+ */
+ee.Image.prototype.getThumbId = function(params, opt_callback) {
+  const args = ee.arguments.extractFromFunction(
+      ee.Image.prototype.getDownloadURL, arguments);
+  let request = args['params'] ? goog.object.clone(args['params']) : {};
+  if (ee.data.getCloudApiEnabled()) {
+    const extra = {};
+    let image = ee.data.images.applyCrsAndTransform(this, request);
+    image =
+        ee.data.images.applySelectionAndScale(image, request, extra);
+    request = ee.data.images.applyVisualization(image, extra);
+  } else {
+    request = ee.data.images.applyVisualization(this, request);
+    if (request['region']) {
+      if (request['region'] instanceof ee.Geometry) {
+        request['region'] = request['region'].toGeoJSON();
+      }
+      if (Array.isArray(request['region']) ||
+          ee.Types.isRegularObject(request['region'])) {
+        request['region'] = goog.json.serialize(request['region']);
+      } else if (typeof request['region'] !== 'string') {
+        throw Error(
+            'The region parameter must be an array or a GeoJSON object.');
+      }
+    }
+  }
+  if (args['callback']) {
+    ee.data.getThumbId(request, args['callback']);
+    return null;
+  } else {
+    return ee.data.getThumbId(request);
+  }
+};
+
+
+/**
  * Get a thumbnail URL for this image.
  * @param {!Object} params Parameters identical to ee.data.getMapId, plus,
  * optionally:
@@ -252,8 +310,9 @@ ee.Image.prototype.getDownloadURL = function(params, opt_callback) {
  *         dimensions of the thumbnail to render, in pixels. If only one
  *         number is passed, it is used as the maximum, and the other
  *         dimension is computed by proportional scaling.
- *   - region (E,S,W,N or GeoJSON) Geospatial region of the image
- *         to render. By default, the whole image.
+ *   - region Geospatial region of the image to render, it may be an ee.Geometry,
+ *         GeoJSON, or an array of lat/lon points (E,S,W,N). If not set the
+ *         default is the bounds image.
  *   - format (string) Either 'png' or 'jpg'.
  * @param {function(string, string=)=} opt_callback An optional
  *     callback. If not supplied, the call is made synchronously.
@@ -264,21 +323,12 @@ ee.Image.prototype.getDownloadURL = function(params, opt_callback) {
 ee.Image.prototype.getThumbURL = function(params, opt_callback) {
   const args = ee.arguments.extractFromFunction(
       ee.Image.prototype.getThumbURL, arguments);
-  const
-  request = ee.data.images.applyVisualization(this, args['params']);
-  if (request['region']) {
-    if (goog.isArray(request['region']) ||
-        ee.Types.isRegularObject(request['region'])) {
-      request['region'] = goog.json.serialize(request['region']);
-    } else if (!goog.isString(request['region'])) {
-      // TODO(user): Support ee.Geometry.
-      throw Error('The region parameter must be an array or a GeoJSON object.');
-    }
-  }
+  // If the Cloud API is enabled, we can do cleaner handling of the parameters.
+  // If it isn't, we have to be bug-for-bug compatible with current behaviour.
   if (args['callback']) {
-    const callbackWrapper = function(thumbId, opt_error) {
+    const callbackWrapper = (thumbId, opt_error) => {
       let thumbUrl = '';
-      if (!goog.isDef(opt_error)) {
+      if (opt_error === undefined) {
         try {
           thumbUrl = ee.data.makeThumbUrl(thumbId);
         } catch (e) {
@@ -287,10 +337,10 @@ ee.Image.prototype.getThumbURL = function(params, opt_callback) {
       }
       args['callback'](thumbUrl, opt_error);
     };
-    ee.data.getThumbId(request, callbackWrapper);
+    this.getThumbId(args['params'], callbackWrapper);
   } else {
     return ee.data.makeThumbUrl(
-        /** @type {!ee.data.ThumbnailId} */ (ee.data.getThumbId(request)));
+        /** @type {!ee.data.ThumbnailId} */ (this.getThumbId(args['params'])));
   }
 };
 
@@ -373,7 +423,7 @@ ee.Image.combine_ = function(images, opt_names) {
  *   the number of selected bands. E.g.
  *   selected = image.select(['a', 4], ['newA', 'newB']);
  *
- * @return {ee.Image} An image with the selected bands.
+ * @return {!ee.Image} An image with the selected bands.
  * @export
  */
 ee.Image.prototype.select = function(var_args) {
@@ -403,7 +453,7 @@ ee.Image.prototype.select = function(var_args) {
   } else if (args[1]) {
     algorithmArgs['newNames'] = args[1];
   }
-  return /** @type {ee.Image} */ (
+  return /** @type {!ee.Image} */ (
       ee.ApiFunction._apply('Image.select', algorithmArgs));
 };
 
@@ -422,6 +472,9 @@ ee.Image.prototype.select = function(var_args) {
  * Both b() and image[] allow multiple arguments, to specify multiple bands,
  * such as b(1, 'name', 3).  Calling b() with no arguments, or using a variable
  * by itself, returns all bands of the image.
+ *
+ * If the result of an expression is a single band, it can be assigned a name
+ * using the '=' operator (e.g.: x = a + b).
  *
  * @param {string} expression The expression to evaluate.
  * @param {Object.<ee.Image>=} opt_map A map of input images available by name.
@@ -454,6 +507,11 @@ ee.Image.prototype.expression = function(expression, opt_map) {
   func.encode = function(encoder) {
     return body.encode(encoder);
   };
+
+  func.encodeCloudInvocation = function(encoder, args) {
+    return ee.rpc_node.functionByReference(encoder(body), args);
+  };
+
   /**
    * @this {ee.Function}
    * @return {ee.Function.Signature}

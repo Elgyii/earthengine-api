@@ -1,5 +1,6 @@
 /**
  * @fileoverview An object representing EE Geometries.
+ * @suppress {missingRequire} TODO(b/152540451): this shouldn't be needed
  */
 
 goog.provide('ee.Geometry');
@@ -78,9 +79,8 @@ ee.Geometry = function(geoJson, opt_proj, opt_geodesic, opt_evenOdd) {
 
   var computed = geoJson instanceof ee.ComputedObject &&
                  !(geoJson instanceof ee.Geometry && geoJson.type_);
-  var options = (goog.isDefAndNotNull(opt_proj) ||
-                 goog.isDefAndNotNull(opt_geodesic) ||
-                 goog.isDefAndNotNull(opt_evenOdd));
+  var options =
+      (opt_proj != null || opt_geodesic != null || opt_evenOdd != null);
   if (computed) {
     if (options) {
       throw new Error(
@@ -116,8 +116,7 @@ ee.Geometry = function(geoJson, opt_proj, opt_geodesic, opt_evenOdd) {
    * @type {Array?}
    * @private
    */
-  this.coordinates_ =
-      goog.isDefAndNotNull(geoJson['coordinates']) ?
+  this.coordinates_ = (geoJson['coordinates'] != null) ?
       goog.object.unsafeClone(geoJson['coordinates']) :
       null;
 
@@ -134,13 +133,12 @@ ee.Geometry = function(geoJson, opt_proj, opt_geodesic, opt_evenOdd) {
    * @private
    */
   this.proj_;
-  if (goog.isDefAndNotNull(opt_proj)) {
+  if (opt_proj != null) {
     this.proj_ = opt_proj;
   } else if ('crs' in geoJson) {
-    if (goog.isObject(geoJson['crs']) &&
-        geoJson['crs']['type'] == 'name' &&
+    if (goog.isObject(geoJson['crs']) && geoJson['crs']['type'] == 'name' &&
         goog.isObject(geoJson['crs']['properties']) &&
-        goog.isString(geoJson['crs']['properties']['name'])) {
+        typeof geoJson['crs']['properties']['name'] === 'string') {
       this.proj_ = geoJson['crs']['properties']['name'];
     } else {
       throw Error('Invalid CRS declaration in GeoJSON: ' +
@@ -154,7 +152,7 @@ ee.Geometry = function(geoJson, opt_proj, opt_geodesic, opt_evenOdd) {
    * @private
    */
   this.geodesic_ = opt_geodesic;
-  if (!goog.isDef(this.geodesic_) && 'geodesic' in geoJson) {
+  if (this.geodesic_ === undefined && 'geodesic' in geoJson) {
     this.geodesic_ = Boolean(geoJson['geodesic']);
   }
 
@@ -165,7 +163,7 @@ ee.Geometry = function(geoJson, opt_proj, opt_geodesic, opt_evenOdd) {
    * @private
    */
   this.evenOdd_ = opt_evenOdd;
-  if (!goog.isDef(this.evenOdd_) && 'evenOdd' in geoJson) {
+  if (this.evenOdd_ === undefined && 'evenOdd' in geoJson) {
     this.evenOdd_ = Boolean(geoJson['evenOdd']);
   }
 };
@@ -228,7 +226,7 @@ ee.Geometry.Point = function(coords, opt_proj) {
   var init = ee.Geometry.construct_(ee.Geometry.Point, 'Point', 1, arguments);
   if (!(init instanceof ee.ComputedObject)) {
     var xy = init['coordinates'];
-    if (!goog.isArray(xy) || xy.length != 2) {
+    if (!Array.isArray(xy) || xy.length != 2) {
       throw Error('The Geometry.Point constructor requires 2 coordinates.');
     }
   }
@@ -323,6 +321,118 @@ ee.Geometry.Rectangle = function(coords, opt_proj, opt_geodesic, opt_evenOdd) {
   ee.Geometry.Rectangle.base(this, 'constructor', init);
 };
 goog.inherits(ee.Geometry.Rectangle, ee.Geometry);
+
+
+/**
+ * Constructs a rectangle whose edges are lines of latitude and longitude.
+ *
+ * The result is a planar WGS84 rectangle.
+ *
+ * If (east - west) ≥ 360 then the longitude range will be normalized to -180 to
+ * +180; otherwise they will be treated as designating points on a circle (e.g.
+ * east may be numerically less than west).
+ *
+ * @param {number} west The westernmost enclosed longitude. Will be adjusted to
+ *     lie in the range -180° to 180°.
+ * @param {number} south The southernmost enclosed latitude. If less than -90°
+ *     (south pole), will be treated as -90°.
+ * @param {number} east The easternmost enclosed longitude.
+ * @param {number} north The northernmost enclosed longitude. If greater than
+ *     +90° (north pole), will be treated as +90°.
+ * @constructor
+ * @extends {ee.Geometry.Rectangle}
+ * @export
+ */
+ee.Geometry.BBox = function(west, south, east, north) {
+  if (!(this instanceof ee.Geometry.BBox)) {
+    return ee.Geometry.createInstance_(ee.Geometry.BBox, arguments);
+  }
+
+  const coordinates = [west, south, east, north];
+  if (ee.Geometry.hasServerValue_(coordinates)) {
+    // Some arguments cannot be handled in the client, so make a server call.
+    return new ee.ApiFunction('GeometryConstructors.BBox').apply(coordinates);
+  }
+  // Else proceed with client-side implementation.
+
+  // Reject NaN and positive (west) or negative (east) infinities before they
+  // become bad JSON. The other two infinities are acceptable because we support
+  // the general idea of a around-the-globe latitude band. By writing them
+  // negated, we also reject NaN.
+  if (!(west < Infinity)) {
+    throw new Error("Geometry.BBox: west must not be " + west);
+  }
+  if (!(east > -Infinity)) {
+    throw new Error("Geometry.BBox: east must not be " + east);
+  }
+  // Reject cases which, if we clamped them instead, would move a box whose
+  // bounds lie entirely "past" a pole to being at the pole. By writing them
+  // negated, we also reject NaN.
+  if (!(south <= 90)) {
+    throw new Error(
+        'Geometry.BBox: south must be at most +90°, but was ' + south + '°');
+  }
+  if (!(north >= -90)) {
+    throw new Error(
+        'Geometry.BBox: north must be at least -90°, but was ' + north + '°');
+  }
+  // On the other hand, allow a box whose extent lies past the pole, but
+  // canonicalize it to being exactly the pole.
+  south = Math.max(south, -90);
+  north = Math.min(north, 90);
+
+  if (east - west >= 360) {
+    // We conclude from seeing more than 360 degrees that the user intends to
+    // specify the entire globe (or a band of latitudes, at least).
+    // Canonicalize to standard global form.
+    west = -180;
+    east = 180;
+  } else {
+    // Not the entire globe. Canonicalize coordinate ranges.
+    west = ee.Geometry.canonicalizeLongitude_(west);
+    east = ee.Geometry.canonicalizeLongitude_(east);
+    if (east < west) {
+      east += 360;
+    }
+  }
+
+  // Construct GeoJSON.
+  var geoJson = {
+    'type': 'Polygon',
+    'coordinates':
+        [[[west, north], [west, south], [east, south], [east, north]]],
+  };
+
+  // Skip Rectangle super constructor because we did our own argument
+  // processing; go direct to general Geometry constructor.
+  ee.Geometry.call(
+      this,
+      geoJson,
+      /* proj= */ undefined,
+      /* geodesic= */ false,
+      /* evenOdd= */ true);
+};
+goog.inherits(ee.Geometry.BBox, ee.Geometry.Rectangle);
+
+
+
+/**
+ * Canonicalize a longitude so that it is in the range [-180, 180). Helper for
+ * ee.Geometry.BBox.
+ *
+ * @param {number} longitude
+ * @return {number}
+ * @private
+ */
+ee.Geometry.canonicalizeLongitude_ = function(longitude) {
+  longitude = longitude % 360;
+  if (longitude > 180) {
+    longitude -= 360;
+  } else if (longitude < -180) {
+    longitude += 360;
+  }
+  return longitude;
+};
 
 
 
@@ -567,7 +677,7 @@ ee.Geometry.prototype.encode = function(opt_encoder) {
     result['coordinates'] = this.coordinates_;
   }
 
-  if (goog.isDefAndNotNull(this.proj_)) {
+  if (this.proj_ != null) {
     result['crs'] = {
       'type': 'name',
       'properties': {
@@ -576,11 +686,11 @@ ee.Geometry.prototype.encode = function(opt_encoder) {
     };
   }
 
-  if (goog.isDefAndNotNull(this.geodesic_)) {
+  if (this.geodesic_ != null) {
     result['geodesic'] = this.geodesic_;
   }
 
-  if (goog.isDefAndNotNull(this.evenOdd_)) {
+  if (this.evenOdd_ != null) {
     result['evenOdd'] = this.evenOdd_;
   }
 
@@ -595,7 +705,7 @@ ee.Geometry.prototype.encode = function(opt_encoder) {
 ee.Geometry.prototype.toGeoJSON = function() {
   if (this.func) {
     throw new Error('Can\'t convert a computed Geometry to GeoJSON. ' +
-                    'Use getInfo() instead.');
+                    'Use evaluate() instead.');
   }
   return /** @type {!ee.data.GeoJSONGeometry} */ (this.encode());
 };
@@ -608,24 +718,72 @@ ee.Geometry.prototype.toGeoJSON = function() {
 ee.Geometry.prototype.toGeoJSONString = function() {
   if (this.func) {
     throw new Error('Can\'t convert a computed Geometry to GeoJSON. ' +
-                    'Use getInfo() instead.');
+                    'Use evaluate() instead.');
   }
   return (new goog.json.Serializer()).serialize(this.toGeoJSON());
 };
 
 
 /**
+ * @param {boolean=} legacy Enables legacy format.
  * @return {string} The serialized representation of this object.
+ * @override
  * @export
  */
-ee.Geometry.prototype.serialize = function() {
-  return ee.Serializer.toJSON(this);
+ee.Geometry.prototype.serialize = function(legacy = false) {
+  return legacy ? ee.Serializer.toJSON(this) :
+                  ee.Serializer.toCloudApiJSON(this);
 };
 
 
 /** @override */
 ee.Geometry.prototype.toString = function() {
   return 'ee.Geometry(' + this.toGeoJSONString() + ')';
+};
+
+
+/** @override */
+ee.Geometry.prototype.encodeCloudValue = function(opt_encoder) {
+  if (!this.type_) {
+    // This is not a concrete Geometry.
+    if (!opt_encoder) {
+      throw Error('Must specify an encode function when encoding a ' +
+                  'computed geometry.');
+    }
+    return ee.ComputedObject.prototype.encodeCloudValue.call(this, opt_encoder);
+  }
+
+  const args = {};
+  let func = '';
+  if (this.type_ === 'GeometryCollection') {
+    // Since there is no GeometryCollection constructor API function, we use the
+    // MultiGeometry constructor instead. However, the geometries argument
+    // expects a list of ee.Geometry objects and not GeoJSON, hence the map.
+    args['geometries'] =
+        this.geometries_.map(geometry => new ee.Geometry(geometry));
+    func = 'GeometryConstructors.MultiGeometry';
+  } else {
+    args['coordinates'] = this.coordinates_;
+    func = 'GeometryConstructors.' + this.type_;
+  }
+
+  if (this.proj_ != null) {
+    args['crs'] = (typeof this.proj_ === 'string') ?
+        new ee.ApiFunction('Projection').call(this.proj_) :
+        this.proj_;
+  }
+
+  const acceptsGeodesicArg =
+      this.type_ !== 'Point' && this.type_ !== 'MultiPoint';
+
+  if (this.geodesic_ != null && acceptsGeodesicArg) {
+    args['geodesic'] = this.geodesic_;
+  }
+
+  if (this.evenOdd_ != null) {
+    args['evenOdd'] = this.evenOdd_;
+  }
+  return new ee.ApiFunction(func).apply(args).encodeCloudValue(opt_encoder);
 };
 
 
@@ -646,7 +804,7 @@ ee.Geometry.isValidGeometry_ = function(geometry) {
   var type = geometry['type'];
   if (type == 'GeometryCollection') {
     var geometries = geometry['geometries'];
-    if (!goog.isArray(geometries)) {
+    if (!Array.isArray(geometries)) {
       return false;
     }
     for (var i = 0; i < geometries.length; i++) {
@@ -676,10 +834,10 @@ ee.Geometry.isValidGeometry_ = function(geometry) {
  * @private
  */
 ee.Geometry.isValidCoordinates_ = function(shape) {
-  if (!goog.isArray(shape)) {
+  if (!Array.isArray(shape)) {
     return -1;
   }
-  if (goog.isArray(shape[0])) {
+  if (Array.isArray(shape[0])) {
     var count = ee.Geometry.isValidCoordinates_(shape[0]);
     // If more than 1 ring or polygon, they should have the same nesting.
     for (var i = 1; i < shape.length; i++) {
@@ -691,7 +849,7 @@ ee.Geometry.isValidCoordinates_ = function(shape) {
   } else {
     // Make sure the coordinates are all numbers.
     for (var i = 0; i < shape.length; i++) {
-      if (!goog.isNumber(shape[i])) {
+      if (typeof shape[i] !== 'number') {
         return -1;
       }
     }
@@ -709,7 +867,7 @@ ee.Geometry.isValidCoordinates_ = function(shape) {
  * @private
  */
 ee.Geometry.coordinatesToLine_ = function(coordinates) {
-  if (!goog.isNumber(coordinates[0])) {
+  if (typeof (coordinates[0]) !== 'number') {
     return /** @type {!Array<!Array<number>>} */ (coordinates);
   }
   if (coordinates.length == 2) {
@@ -736,7 +894,7 @@ ee.Geometry.coordinatesToLine_ = function(coordinates) {
  * @param {number} depth The nesting depth at which points are found within
  *     the coordinates array.
  * @param {!Arguments} originalArgs The arguments to the JS constructor.
- * @return {!Object|ee.ComputedObject} If the arguments are simple,
+ * @return {!Object|!ee.ComputedObject} If the arguments are simple,
  *     a GeoJSON object describing the geometry. Otherwise a
  *     ComputedObject calling the appropriate server-side constructor.
  * @private
@@ -748,8 +906,7 @@ ee.Geometry.construct_ = function(
   // Standardize the coordinates and test if they are simple enough for
   // client-side initialization.
   if (ee.Geometry.hasServerValue_(eeArgs['coordinates']) ||
-      goog.isDefAndNotNull(eeArgs['crs']) ||
-      goog.isDefAndNotNull(eeArgs['maxError'])) {
+      eeArgs['crs'] != null || eeArgs['maxError'] != null) {
     // Some arguments cannot be handled in the client, so make a server call.
     // Note we don't declare a default evenOdd value, so the server can infer
     // a default based on the projection.
@@ -766,7 +923,7 @@ ee.Geometry.construct_ = function(
             ['Polygon', 'Rectangle', 'MultiPolygon'],
             apiConstructorName);
 
-    if (isPolygon && !goog.isDefAndNotNull(geoJson['evenOdd'])) {
+    if (isPolygon && geoJson['evenOdd'] == null) {
       // Default to evenOdd=true for any kind of polygon.
       geoJson['evenOdd'] = true;
     }
@@ -805,7 +962,7 @@ ee.Geometry.getEeApiArgs_ = function(jsConstructorFn, originalArgs) {
     delete args['coords'];
     args['crs'] = args['proj'];
     delete args['proj'];
-    return goog.object.filter(args, goog.isDefAndNotNull);
+    return goog.object.filter(args, x => x != null);
   }
 };
 
@@ -821,7 +978,7 @@ ee.Geometry.getEeApiArgs_ = function(jsConstructorFn, originalArgs) {
  * @private
  */
 ee.Geometry.hasServerValue_ = function(coordinates) {
-  if (goog.isArray(coordinates)) {
+  if (Array.isArray(coordinates)) {
     return goog.array.some(coordinates, ee.Geometry.hasServerValue_);
   } else {
     return coordinates instanceof ee.ComputedObject;
@@ -845,14 +1002,14 @@ ee.Geometry.fixDepth_ = function(depth, coords) {
   }
 
   // Handle a list of numbers.
-  if (goog.array.every(coords, goog.isNumber)) {
+  if (goog.array.every(coords, x => typeof x === 'number')) {
     coords = ee.Geometry.coordinatesToLine_(coords);
   }
 
   // Make sure the number of nesting levels is correct.
   var item = coords;
   var count = 0;
-  while (goog.isArray(item)) {
+  while (Array.isArray(item)) {
     item = item[0];
     count++;
   }
@@ -867,10 +1024,10 @@ ee.Geometry.fixDepth_ = function(depth, coords) {
 
   // Empty arrays should not be wrapped.
   item = coords;
-  while (goog.isArray(item) && item.length == 1) {
+  while (Array.isArray(item) && item.length == 1) {
     item = item[0];
   }
-  if (goog.isArray(item) && item.length == 0) {
+  if (Array.isArray(item) && item.length == 0) {
     return [];
   }
 

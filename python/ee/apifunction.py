@@ -97,6 +97,8 @@ class ApiFunction(function.Function):
   def encode_invocation(self, unused_encoder):
     return self._signature['name']
 
+  def encode_cloud_invocation(self, unused_encoder):
+    return {'functionName': self._signature['name']}
 
   def getSignature(self):
     """Returns a description of the interface provided by this function."""
@@ -221,6 +223,11 @@ class ApiFunction(function.Function):
         if signature.get('deprecated'):
           deprecated_decorator = deprecation.Deprecated(signature['deprecated'])
           bound_function = deprecated_decorator(bound_function)
+
+        # Mark as preview if needed.
+        if signature.get('preview'):
+          bound_function.__doc__ += (
+              '\nPREVIEW: This function is preview or internal only.')
 
         # Decide whether this is a static or an instance function.
         is_instance = (signature['args'] and

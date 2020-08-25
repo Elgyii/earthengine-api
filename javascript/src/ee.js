@@ -74,7 +74,7 @@ ee.initialize = function(
     return;
   }
 
-  var isAsynchronous = goog.isDefAndNotNull(opt_successCallback);
+  var isAsynchronous = (opt_successCallback != null);
 
   // Register the error callback.
   if (opt_errorCallback) {
@@ -228,13 +228,13 @@ ee.ready = function() {
  * @param {ee.Function|string} func The function to call. Either an
  *     ee.Function object or the name of an API function.
  * @param {...*} var_args Positional arguments to pass to the function.
- * @return {ee.ComputedObject} An object representing the called function.
+ * @return {!ee.ComputedObject} An object representing the called function.
  *     If the signature specifies a recognized return type, the returned
  *     value will be cast to that type.
  * @export
  */
 ee.call = function(func, var_args) {
-  if (goog.isString(func)) {
+  if (typeof func === 'string') {
     func = new ee.ApiFunction(func);
   }
   // Extract var_args.
@@ -250,13 +250,13 @@ ee.call = function(func, var_args) {
  * @param {ee.Function|string} func The function to call. Either an
  *     ee.Function object or the name of an API function.
  * @param {Object} namedArgs A dictionary of arguments to the function.
- * @return {ee.ComputedObject} An object representing the called function.
+ * @return {!ee.ComputedObject} An object representing the called function.
  *     If the signature specifies a recognized return type, the returned
  *     value will be cast to that type.
  * @export
  */
 ee.apply = function(func, namedArgs) {
-  if (goog.isString(func)) {
+  if (typeof func === 'string') {
     func = new ee.ApiFunction(func);
   }
   return func.apply(namedArgs);
@@ -355,9 +355,9 @@ ee.initializationFailure_ = function(e) {
  * @suppress {accessControls} We are calling functions with partial promotion.
  */
 ee.promote_ = function(arg, klass) {
-  if (goog.isNull(arg)) {
+  if (arg === null) {
     return null;
-  } else if (!goog.isDef(arg)) {
+  } else if (arg === undefined) {
     return undefined;
   }
 
@@ -408,10 +408,10 @@ ee.promote_ = function(arg, klass) {
     case 'Filter':
       return new ee.Filter(/** @type {Object} */ (arg));
     case 'Algorithm':
-      if (goog.isString(arg)) {
+      if (typeof arg === 'string') {
         // An API function name.
         return new ee.ApiFunction(arg);
-      } else if (goog.isFunction(arg)) {
+      } else if (typeof arg === 'function') {
         // A native function that needs to be wrapped.
         return ee.CustomFunction.create(
             arg, 'Object', goog.array.repeat('Object', arg.length));
@@ -455,7 +455,7 @@ ee.promote_ = function(arg, klass) {
         } else if (ctor) {
           // The client-side constructor will call the server-side constructor.
           return new exportedEE[klass](arg);
-        } else if (goog.isString(arg)) {
+        } else if (typeof arg === 'string') {
           if (arg in exportedEE[klass]) {
             // arg is the name of a method on klass.
             return exportedEE[klass][arg].call();
@@ -583,7 +583,7 @@ ee.resetGeneratedClasses_ = function() {
  * Dynamically make an ee helper class.
  *
  * @param {string} name The name of the class to create.
- * @return {Function} The generated class.
+ * @return {!Function} The generated class.
  * @private
  * @suppress {accessControls}
  */
@@ -630,17 +630,21 @@ ee.makeClass_ = function(name) {
       } else if (firstArgIsPrimitive) {
         // Can't cast a primitive.
         shouldUseConstructor = true;
-      } else if (args[0].func != ctor) {
-        // We haven't already called the constructor on this object.
+      } else if (!args[0].func ||
+          args[0].func.getSignature().returns != ctor.getSignature().returns) {
+        // We have a single ComputedObject argument. If it returns a different
+        // type, we need to call the constructor. Otherwise this is a copy
+        // constructor usage, and we can simply cast.
         shouldUseConstructor = true;
       }
     }
 
     // Apply our decision.
     if (shouldUseConstructor) {
+      const namedArgs = ee.Types.useKeywordArgs(args, ctor.getSignature())
+          ? args[0] : ctor.nameArgs(args);
       // Call manually to avoid having promote() called on the output.
-      target.base(this, 'constructor',
-          ctor, ctor.promoteArgs(ctor.nameArgs(args)));
+      target.base(this, 'constructor', ctor, ctor.promoteArgs(namedArgs));
     } else {
       // Just cast and hope for the best.
       if (!onlyOneArg) {

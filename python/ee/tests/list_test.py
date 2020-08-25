@@ -17,7 +17,7 @@ class ListTest(apitestcase.ApiTestCase):
     self.assertEqual([1, 2, 3], ee.Serializer(False)._encode(l))
 
     computed = ee.List([1, 2, 3]).slice(0)    # pylint: disable=no-member
-    self.assertTrue(isinstance(computed, ee.List))
+    self.assertIsInstance(computed, ee.List)
     self.assertEqual(ee.ApiFunction.lookup('List.slice'), computed.func)
     self.assertEqual({
         'list': ee.List([1, 2, 3]),
@@ -29,7 +29,7 @@ class ListTest(apitestcase.ApiTestCase):
     body = lambda s: ee.String(s).cat('bar')
     mapped = lst.map(body)
 
-    self.assertTrue(isinstance(mapped, ee.List))
+    self.assertIsInstance(mapped, ee.List)
     self.assertEqual(ee.ApiFunction.lookup('List.map'), mapped.func)
     self.assertEqual(lst, mapped.args['list'])
 
@@ -43,6 +43,9 @@ class ListTest(apitestcase.ApiTestCase):
     expected_function = ee.CustomFunction(sig, body)
     self.assertEqual(expected_function.serialize(),
                      mapped.args['baseAlgorithm'].serialize())
+    self.assertEqual(
+        expected_function.serialize(for_cloud_api=True),
+        mapped.args['baseAlgorithm'].serialize(for_cloud_api=True))
 
   def testInternals(self):
     """Test eq(), ne() and hash()."""

@@ -17,7 +17,7 @@ goog.require('goog.array');
 goog.require('goog.string');
 
 
-goog.forwardDeclare('ee.FeatureCollection');
+goog.requireType('ee.FeatureCollection');
 
 /**
  * Constructs a new filter. This constructor accepts the following args:
@@ -51,7 +51,7 @@ ee.Filter = function(opt_filter) {
    */
   this.filter_;
 
-  if (goog.isArray(opt_filter)) {
+  if (Array.isArray(opt_filter)) {
     if (opt_filter.length == 0) {
       throw Error('Empty list specified for ee.Filter().');
     } else if (opt_filter.length == 1) {
@@ -67,7 +67,7 @@ ee.Filter = function(opt_filter) {
     // Actual filter object.
     ee.Filter.base(this, 'constructor', opt_filter.func, opt_filter.args, opt_filter.varName);
     this.filter_ = [opt_filter];
-  } else if (!goog.isDef(opt_filter)) {
+  } else if (opt_filter === undefined) {
     // A silly call with no arguments left for backward-compatibility.
     // Encoding such a filter is expected to fail, but it can be composed
     // by calling the various methods that end up in append_().
@@ -130,7 +130,7 @@ ee.Filter.functionNames_ = {
  *     - another fully constructed ee.Filter,
  *     - a ComputedObject producing a filter,
  *     - a list of 1 or 2.
- * @return {ee.Filter} A new filter that is the combination of both.
+ * @return {!ee.Filter} A new filter that is the combination of both.
  * @private
  */
 ee.Filter.prototype.append_ = function(newFilter) {
@@ -148,8 +148,8 @@ ee.Filter.prototype.append_ = function(newFilter) {
 
 
 /**
- * Returns the opposite of this filter, i.e. a filter that will match iff
- * this filter doesn't.
+ * Returns the opposite of the input filter, i.e. the resulting filter will
+ * match if and only if the input filter doesn't match.
  * @return {ee.Filter} The negated filter.
  * @export
  */
@@ -272,14 +272,14 @@ ee.Filter.or = function(var_args) {
 
 
 /**
- * Filter images by date. The start and end may be a Date, numbers
+ * Filter a collection by date range. The start and end may be Dates, numbers
  * (interpreted as milliseconds since 1970-01-01T00:00:00Z), or strings (such
- * as '1996-01-01T08:00').
+ * as '1996-01-01T08:00'). Based on 'system:time_start' property.
  *
- * @param {Date|string|number} start The inclusive start date.
- * @param {Date|string|number=} opt_end The optional exclusive end date. If not
- *     specified, a 1-millisecond range starting at 'start' is created.
- * @return {ee.Filter} The constructed filter.
+ * @param {!Date|string|number} start The start date (inclusive).
+ * @param {?Date|string|number=} opt_end The end date (exclusive). Optional. If
+ *     not specified, a 1-millisecond range starting at 'start' is created.
+ * @return {?ee.Filter} The constructed filter.
  * @export
  */
 ee.Filter.date = function(start, opt_end) {
@@ -324,20 +324,21 @@ ee.Filter.inList = function(
 
 
 /**
- * Filter on bounds.
+ * Creates a filter that passes if the object's geometry intersects the
+ * given geometry.
  *
- * @param {ee.Geometry|ee.ComputedObject|ee.FeatureCollection} geometry
- *     The geometry, feature or collection to filter to.
- * @param {number|ee.ComputedObject=} opt_errorMargin An optional error margin.
+ * @param {!ee.Geometry|!ee.ComputedObject|!ee.FeatureCollection} geometry
+ *     The geometry, feature or collection to intersect with.
+ * @param {number|!ee.ComputedObject=} opt_errorMargin An optional error margin.
  *     If a number, interpreted as sphere surface meters.
- * @return {ee.Filter} The modified filter.
+ * @return {!ee.Filter} The constructed filter.
  * @export
  */
 ee.Filter.bounds = function(geometry, opt_errorMargin) {
   // Invoke geometry promotion then manually promote to a Feature.
   // TODO(user): Discuss whether filters should go back to working
   //              directly on geometries.
-  return /** @type {ee.Filter} */ (
+  return /** @type {!ee.Filter} */ (
       ee.ApiFunction._apply('Filter.intersects', {
         'leftField': '.all',
         'rightValue': ee.ApiFunction._call('Feature', geometry),

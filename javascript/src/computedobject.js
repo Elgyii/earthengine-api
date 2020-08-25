@@ -5,12 +5,13 @@
 
 goog.provide('ee.ComputedObject');
 
+goog.requireType('ee.Function');
 goog.require('ee.Encodable');
 goog.require('ee.Serializer');
+goog.require('ee.api');
 goog.require('ee.data');
+goog.require('ee.rpc_node');
 goog.require('goog.array');
-
-goog.forwardDeclare('ee.Function');
 
 
 
@@ -97,7 +98,7 @@ goog.exportSymbol('ee.ComputedObject', ee.ComputedObject);
  * @export
  */
 ee.ComputedObject.prototype.evaluate = function(callback) {
-  if (!callback || !goog.isFunction(callback)) {
+  if (!callback || typeof callback !== 'function') {
     throw Error('evaluate() requires a callback function.');
   }
   ee.data.computeValue(this, callback);
@@ -134,7 +135,7 @@ ee.ComputedObject.prototype.encode = function(encoder) {
   } else {
     var encodedArgs = {};
     for (var name in this.args) {
-      if (goog.isDef(this.args[name])) {
+      if (this.args[name] !== undefined) {
         encodedArgs[name] = encoder(this.args[name]);
       }
     }
@@ -143,18 +144,40 @@ ee.ComputedObject.prototype.encode = function(encoder) {
       'arguments': encodedArgs
     };
     var func = encoder(this.func);
-    result[goog.isString(func) ? 'functionName' : 'function'] = func;
+    result[typeof func === 'string' ? 'functionName' : 'function'] = func;
     return result;
+  }
+};
+
+
+/** @override */
+ee.ComputedObject.prototype.encodeCloudValue = function(encoder) {
+  if (this.isVariable()) {
+    // varName may be null for unbound variables; server will report the error.
+    return ee.rpc_node.argumentReference(this.varName || '');
+  } else {
+    /** @type {!Object<string,!ee.api.ValueNode>} */
+    const encodedArgs = {};
+    for (var name in this.args) {
+      if (this.args[name] !== undefined) {
+        encodedArgs[name] = ee.rpc_node.reference(encoder(this.args[name]));
+      }
+    }
+    return typeof this.func === 'string' ?
+        ee.rpc_node.functionByName(String(this.func), encodedArgs) :
+        this.func.encodeCloudInvocation(encoder, encodedArgs);
   }
 };
 
 
 /**
  * @return {string} The serialized representation of this object.
+ * @param {boolean=} legacy Enables legacy format.
  * @export
  */
-ee.ComputedObject.prototype.serialize = function() {
-  return ee.Serializer.toJSON(this);
+ee.ComputedObject.prototype.serialize = function(legacy = false) {
+  return legacy ? ee.Serializer.toJSON(this) :
+                  ee.Serializer.toCloudApiJSON(this);
 };
 
 
@@ -175,7 +198,7 @@ goog.exportSymbol('ee.ComputedObject.prototype.toString',
 ee.ComputedObject.prototype.isVariable = function() {
   // We can't just check for varName != null, since we allow that
   // to remain null until for CustomFunction.resolveNamelessArgs_().
-  return goog.isNull(this.func) && goog.isNull(this.args);
+  return this.func === null && this.args === null;
 };
 
 
@@ -199,7 +222,7 @@ ee.ComputedObject.prototype.name = function() {
  *
  * @param {Function} func The function to call.
  * @param {...*} var_args Any extra arguments to pass to the function.
- * @return {ee.ComputedObject} The same object, for chaining.
+ * @return {!ee.ComputedObject} The same object, for chaining.
  * @export
  */
 ee.ComputedObject.prototype.aside = function(func, var_args) {
@@ -240,7 +263,7 @@ ee.ComputedObject.prototype.castInternal = function(obj) {
  *
  * @param {Function} constructor The constructor to construct.
  * @param {IArrayLike} argsArray The args array.
- * @return {Object} The newly constructed object.
+ * @return {!Object} The newly constructed object.
  */
 ee.ComputedObject.construct = function(constructor, argsArray) {
   /** @constructor */

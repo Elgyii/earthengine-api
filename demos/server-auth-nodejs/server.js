@@ -1,34 +1,46 @@
 /**
- * server.js
- *
- * Works in the local development environment and when deployed. If successful,
- * shows a single web page with the SRTM DEM displayed in a Google Map. See
+ * @license
+ * Copyright 2020 Google LLC
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/**
+ * @fileoverview Default entry point for App Engine Node.js runtime. Defines a
+ * web service which returns the mapid to be used by clients to display map
+ * tiles showing slope computed in real time from SRTM DEM data. See
  * accompanying README file for instructions on how to set up authentication.
  */
 const ee = require('@google/earthengine');
 const express = require('express');
-const handlebars  = require('express-handlebars');
+const privateKey = require('./.private-key.json');
+const port = process.env.PORT || 3000;
 
-const app = express()
-  .engine('.hbs', handlebars({extname: '.hbs', cache: false}))
-  .set('view engine', '.hbs')
-  .use('/static', express.static('static'))
-  .get('/', (request, response) => {
-
-    const image = ee.Image('srtm90_v4');
-    image.getMap({min: 0, max: 1000}, ({mapid, token}) => {
-      response.render('index', {mapid, token});
-    });
-
-  });
-
-// Private key, in `.json` format, for an Earth Engine service account.
-const PRIVATE_KEY = require('./privatekey.json');
-const PORT = process.env.PORT || 3000;
-
-ee.data.authenticateViaPrivateKey(PRIVATE_KEY, () => {
-  ee.initialize(null, null, () => {
-    app.listen(PORT);
-    console.log(`Listening on port ${PORT}`);
-  });
+// Define endpoint at /mapid.
+const app = express().get('/mapid', (_, response) => {
+  const srtm = ee.Image('CGIAR/SRTM90_V4');
+  const slope = ee.Terrain.slope(srtm);
+  slope.getMap({min: 0, max: 60}, ({mapid}) => response.send(mapid));
 });
+
+console.log('Authenticating Earth Engine API using private key...');
+ee.data.authenticateViaPrivateKey(
+    privateKey,
+    () => {
+      console.log('Authentication successful.');
+      ee.initialize(
+          null, null,
+          () => {
+            console.log('Earth Engine client library initialized.');
+            app.listen(port);
+            console.log(`Listening on port ${port}`);
+          },
+          (err) => {
+            console.log(err);
+            console.log(
+                `Please make sure you have created a service account and have been approved.
+Visit https://developers.google.com/earth-engine/service_account#how-do-i-create-a-service-account to learn more.`);
+          });
+    },
+    (err) => {
+      console.log(err);
+    });

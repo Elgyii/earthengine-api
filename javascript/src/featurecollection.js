@@ -24,13 +24,14 @@ goog.require('goog.array');
  *   - A single geometry.
  *   - A single feature.
  *   - A list of features.
+ *   - A GeoJSON FeatureCollection
  *   - A computed object: reinterpreted as a collection.
  *
  * @param {string|number|Array.<*>|ee.ComputedObject|
  *         ee.Geometry|ee.Feature|ee.FeatureCollection} args
  *     The constructor arguments.
  * @param {string=} opt_column The name of the geometry column to use.  Only
- *     useful with constructor type 1.
+ *     useful when working with a named collection.
  * @constructor
  * @extends {ee.Collection}
  * @export
@@ -68,7 +69,7 @@ ee.FeatureCollection = function(args, opt_column) {
       actualArgs['geometryColumn'] = opt_column;
     }
     ee.FeatureCollection.base(this, 'constructor', new ee.ApiFunction('Collection.loadTable'), actualArgs);
-  } else if (goog.isArray(args)) {
+  } else if (Array.isArray(args)) {
     // A list of features.
     ee.FeatureCollection.base(this, 'constructor', new ee.ApiFunction('Collection'), {
       'features': goog.array.map(args, function(elem) {
@@ -77,7 +78,13 @@ ee.FeatureCollection = function(args, opt_column) {
     });
   } else if (args instanceof ee.List) {
     // A computed list of features.  This can't get the extra ee.Feature()
-    ee.FeatureCollection.base(this, 'constructor', new ee.ApiFunction('Collection'), { 'features': args });
+    ee.FeatureCollection.base(
+        this, 'constructor', new ee.ApiFunction('Collection'),
+        {'features': args});
+  } else if (args instanceof Object && args['type'] === 'FeatureCollection') {
+    ee.FeatureCollection.base(
+        this, 'constructor', new ee.ApiFunction('Collection'),
+        {'features': args['features'].map(f => new ee.Feature(f))});
   } else if (args instanceof ee.ComputedObject) {
     // A custom object to reinterpret as a FeatureCollection.
     ee.FeatureCollection.base(this, 'constructor', args.func, args.args, args.varName);
@@ -122,14 +129,15 @@ ee.FeatureCollection.reset = function() {
  * An imperative function that returns a map id and token, suitable for
  * generating a Map overlay.
  *
- * @param {Object?=} opt_visParams The visualization parameters. Currently only
+ * @param {?Object=} opt_visParams The visualization parameters. Currently only
  *     one parameter, 'color', containing an RGB color string is allowed.  If
  *     vis_params isn't specified, then the color #000000 is used.
- * @param {function(Object, string=)=} opt_callback An async callback.
+ * @param {function(!Object, string=)=} opt_callback An async callback.
  *     If not supplied, the call is made synchronously.
- * @return {ee.data.MapId|undefined} An object containing a mapid string, an
- *     acess token, plus a Collection.draw image wrapping this collection. Or
- *     undefined if a callback was specified.
+ * @return {!ee.data.MapId|undefined} An object which may be passed to
+ *     ee.data.getTileUrl or ui.Map.addLayer, including an additional 'image'
+ *     field, containing a Collection.draw image wrapping a FeatureCollection
+ *     containing this feature. Undefined if a callback was specified.
  * @export
  */
 ee.FeatureCollection.prototype.getMap = function(opt_visParams, opt_callback) {
@@ -190,7 +198,11 @@ ee.FeatureCollection.prototype.getDownloadURL = function(
   var args = ee.arguments.extractFromFunction(
       ee.FeatureCollection.prototype.getDownloadURL, arguments);
   var request = {};
-  request['table'] = this.serialize();
+  if (ee.data.getCloudApiEnabled()) {
+    request['table'] = this;
+  } else {
+    request['table'] = this.serialize();
+  }
   if (args['format']) {
     request['format'] = args['format'].toUpperCase();
   }
@@ -198,11 +210,7 @@ ee.FeatureCollection.prototype.getDownloadURL = function(
     request['filename'] = args['filename'];
   }
   if (args['selectors']) {
-    var selectors = args['selectors'];
-    if (goog.isArrayLike(selectors)) {
-      selectors = selectors.join(',');
-    }
-    request['selectors'] = selectors;
+    request['selectors'] = args['selectors'];
   }
 
   if (args['callback']) {

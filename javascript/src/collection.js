@@ -1,7 +1,7 @@
 /**
  * @fileoverview Base class for ImageCollection and FeatureCollection.
  * This class is never intended to be instantiated by the user.
- *
+ * @suppress {missingRequire} TODO(b/152540451): this shouldn't be needed
  */
 
 goog.provide('ee.Collection');
@@ -14,7 +14,7 @@ goog.require('ee.arguments');
 
 
 /**
- * Constructs a base collection by passing the representaion up to Element.
+ * Constructs a base collection by passing the representation up to Element.
  * @param {ee.Function} func The same argument as in ee.ComputedObject().
  * @param {Object} args The same argument as in ee.ComputedObject().
  * @param {string?=} opt_varName The same argument as in ee.ComputedObject().
@@ -107,12 +107,12 @@ ee.Collection.prototype.filterMetadata = function(name, operator, value) {
 
 
 /**
- * Shortcut to filter a collection by geometry.  Items in the
- * collection with a footprint that fails to intersect the bounds
- * will be excluded when the collection is evaluated.
+ * Shortcut to filter a collection by intersection with geometry.  Items in the
+ * collection with a footprint that fails to intersect the given geometry
+ * will be excluded.
  *
  * This is equivalent to this.filter(ee.Filter.bounds(...)).
- * @param {ee.Feature|ee.Geometry} geometry The geometry to filter to.
+ * @param {!ee.Geometry} geometry The geometry to filter to.
  * @return {ee.Collection} The filtered collection.
  * @export
  */
@@ -122,17 +122,16 @@ ee.Collection.prototype.filterBounds = function(geometry) {
 
 
 /**
- * Shortcut to filter a collection by a date range.  Items in the
- * collection with a time_start property that doesn't fall between the
- * start and end dates will be excluded.
+ * Shortcut to filter a collection by a date range. The start and end may be
+ * Dates, numbers (interpreted as milliseconds since 1970-01-01T00:00:00Z), or
+ * strings (such as '1996-01-01T08:00'). Based on 'system:time_start'.
  *
  * This is equivalent to this.filter(ee.Filter.date(...)).
  *
- * @param {Date|string|number} start The start date as a Date object,
- *     a string representation of a date, or milliseconds since epoch.
- * @param {Date|string|number=} opt_end The end date as a Date object,
- *     a string representation of a date, or milliseconds since epoch.
- * @return {ee.Collection} The filtered collection.
+ * @param {!Date|string|number} start The start date (inclusive).
+ * @param {?Date|string|number=} opt_end The end date (exclusive). Optional. If
+ *     not specified, a 1-millisecond range starting at 'start' is created.
+ * @return {?ee.Collection} The filtered collection.
  * @export
  */
 ee.Collection.prototype.filterDate = function(start, opt_end) {
@@ -229,11 +228,11 @@ ee.Collection.prototype.map = function(algorithm, opt_dropNulls) {
  *     to each element. Must take two arguments: an element of the collection
  *     and the value from the previous iteration.
  * @param {*=} opt_first The initial state.
- * @return {ee.ComputedObject} The result of the Collection.iterate() call.
+ * @return {!ee.ComputedObject} The result of the Collection.iterate() call.
  * @export
  */
 ee.Collection.prototype.iterate = function(algorithm, opt_first) {
-  var first = goog.isDef(opt_first) ? opt_first : null;
+  var first = (opt_first !== undefined) ? opt_first : null;
   var elementType = this.elementType();
   var withCast = function(e, p) { return algorithm(new elementType(e), p); };
   return ee.ApiFunction._call('Collection.iterate', this, withCast, first);

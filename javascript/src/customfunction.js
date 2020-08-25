@@ -10,8 +10,8 @@ goog.require('ee.Number');
 goog.require('ee.Serializer');
 goog.require('ee.String');
 goog.require('ee.Types');
+goog.require('ee.rpc_node');
 goog.require('goog.array');
-goog.require('goog.object');
 
 
 
@@ -43,7 +43,7 @@ ee.CustomFunction = function(signature, body) {
 
   // Check that the method returns something, before we try
   // encoding it in resolveNamelessArgs_().
-  if (!goog.isDef(body.apply(null, vars))) {
+  if (body.apply(null, vars) === undefined) {
     throw Error('User-defined methods must return a value.');
   }
 
@@ -75,6 +75,19 @@ ee.CustomFunction.prototype.encode = function(encoder) {
         this.signature_['args'], function(arg) { return arg['name']; }),
     'body': encoder(this.body_)
   };
+};
+
+
+/** @override */
+ee.CustomFunction.prototype.encodeCloudValue = function(encoder) {
+  return ee.rpc_node.functionDefinition(
+      this.signature_['args'].map(arg => arg['name']), encoder(this.body_));
+};
+
+
+/** @override */
+ee.CustomFunction.prototype.encodeCloudInvocation = function(encoder, args) {
+  return ee.rpc_node.functionByReference(encoder(this), args);
 };
 
 
@@ -135,11 +148,11 @@ ee.CustomFunction.variable = function(type, name) {
  *     as a string or a constructor/class reference.
  * @param {Array.<string|Function>} arg_types The types of the arguments,
  *     either as strings or constructor/class references.
- * @return {ee.CustomFunction} The constructed CustomFunction.
+ * @return {!ee.CustomFunction} The constructed CustomFunction.
  */
 ee.CustomFunction.create = function(func, returnType, arg_types) {
   var stringifyType = function(type) {
-    if (goog.isString(type)) {
+    if (typeof type === 'string') {
       return type;
     } else {
       return ee.Types.classToName(type);
@@ -164,53 +177,63 @@ ee.CustomFunction.create = function(func, returnType, arg_types) {
  * Deterministically generates names for the unnamed variables, based on the
  * body.
  *
- * @param {ee.Function.Signature} signature The signature which may contain
+ * @param {!ee.Function.Signature} signature The signature which may contain
  *     null argument names.
- * @param {Array.<ee.ComputedObject>} vars A list of variables, some of which
+ * @param {!Array<!ee.ComputedObject>} vars A list of variables, some of which
  *     may be nameless. These will be updated to include names when this
  *     method returns.
- * @param {Function} body The JavaScript function to evaluate.
- * @return {ee.Function.Signature} The signature with null arg names resolved.
+ * @param {!Function} body The JavaScript function to evaluate.
+ * @return {!ee.Function.Signature} The signature with null arg names resolved.
  * @private
  * @suppress {accessControls} We are accessing the protected varName.
  */
 ee.CustomFunction.resolveNamelessArgs_ = function(signature, vars, body) {
-  var namelessArgIndices = [];
-  for (var i = 0; i < vars.length; i++) {
-    if (goog.isNull(vars[i].varName)) {
+  const namelessArgIndices = [];
+  for (let i = 0; i < vars.length; i++) {
+    if (vars[i].varName === null) {
       namelessArgIndices.push(i);
     }
   }
 
   // Do we have any nameless arguments at all?
-  if (namelessArgIndices.length == 0) {
+  if (namelessArgIndices.length === 0) {
     return signature;
   }
 
   // Generate the name base by counting the number of custom functions
   // within the body.
-  var countFunctions = function(expression) {
-    var count = 0;
-    if (goog.isObject(expression) && !goog.isFunction(expression)) {
-      if (expression['type'] == 'Function') {
-        // Technically this allows false positives if one of the user
-        // dictionaries contains type=Function, but that does not matter
-        // for this use case, as we only care about determinism.
-        count++;
+  const countFunctions = (expression) => {
+    const countNodes = (nodes) =>
+        nodes.map(countNode).reduce((a, b) => a + b, 0);
+    const countNode = (node) => {
+      if (node.functionDefinitionValue) {
+        return 1;
+      } else if (node.arrayValue) {
+        return countNodes(node.arrayValue.values);
+      } else if (node.dictionaryValue) {
+        return countNodes(Object.values(node.dictionaryValue.values));
+      } else if (node.valueReference != null) {
+        return countNode(expression.values[node.valueReference]);
+      } else if (node.functionInvocationValue) {
+        const fn = node.functionInvocationValue;
+        let count = countNodes(Object.values(fn.arguments));
+        if (fn.functionReference != null) {
+          count += countNode(expression.values[fn.functionReference]);
+        }
+        return count;
       }
-      goog.object.forEach(expression, function(subExpression) {
-        count += countFunctions(subExpression);
-      });
-    }
-    return count;
+      return 0;
+    };
+    return countNode(expression.values[expression.result]);
   };
-  var serializedBody = ee.Serializer.encode(body.apply(null, vars));
-  var baseName = '_MAPPING_VAR_' + countFunctions(serializedBody) + '_';
+
+  const serializedBody = ee.Serializer.encodeCloudApi(body.apply(null, vars));
+  const baseName = `_MAPPING_VAR_${countFunctions(serializedBody)}_`;
 
   // Update the vars and signature by the name.
-  for (var i = 0; i < namelessArgIndices.length; i++) {
-    var index = namelessArgIndices[i];
-    var name = baseName + i;
+  for (let i = 0; i < namelessArgIndices.length; i++) {
+    const index = namelessArgIndices[i];
+    const name = baseName + i;
     vars[index].varName = name;
     signature['args'][index]['name'] = name;
   }

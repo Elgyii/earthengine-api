@@ -18,6 +18,7 @@ goog.require('ee.ComputedObject');
 goog.require('ee.Function');
 goog.require('ee.Types');
 goog.require('ee.data');
+goog.require('ee.rpc_node');
 goog.require('goog.object');
 
 
@@ -31,7 +32,7 @@ goog.require('goog.object');
  * @extends {ee.Function}
  */
 ee.ApiFunction = function(name, opt_signature) {
-  if (!goog.isDef(opt_signature)) {
+  if (opt_signature === undefined) {
     return ee.ApiFunction.lookup(name);
   } else if (!(this instanceof ee.ApiFunction)) {
     return ee.ComputedObject.construct(ee.ApiFunction, arguments);
@@ -89,6 +90,12 @@ ee.ApiFunction.prototype.encode = function(encoder) {
 
 
 /** @override */
+ee.ApiFunction.prototype.encodeCloudInvocation = function(encoder, args) {
+  return ee.rpc_node.functionByName(this.signature_['name'], args);
+};
+
+
+/** @override */
 ee.ApiFunction.prototype.getSignature = function() {
   return this.signature_;
 };
@@ -128,7 +135,7 @@ ee.ApiFunction.allSignatures = function() {
 /**
  * Returns the functions that have not been bound using importApi() yet.
  *
- * @return {Object.<ee.ApiFunction>} A map from name to function.
+ * @return {!Object.<ee.ApiFunction>} A map from name to function.
  */
 ee.ApiFunction.unboundFunctions = function() {
   ee.ApiFunction.initialize();
@@ -177,7 +184,7 @@ ee.ApiFunction.lookupInternal = function(name) {
 ee.ApiFunction.initialize = function(opt_successCallback, opt_failureCallback) {
   if (!ee.ApiFunction.api_) {
     /**
-     * @param {!ee.data.AlgorithmsRegistry} data
+     * @param {?ee.data.AlgorithmsRegistry} data
      * @param {string=} opt_error
      */
     var callback = function(data, opt_error) {
@@ -288,7 +295,7 @@ ee.ApiFunction.importApi = function(target, prefix, typeName, opt_prepend) {
 ee.ApiFunction.clearApi = function(target) {
   var clear = function(target) {
     for (var name in target) {
-      if (goog.isFunction(target[name]) && target[name]['signature']) {
+      if (typeof target[name] === 'function' && target[name]['signature']) {
         delete target[name];
       }
     }

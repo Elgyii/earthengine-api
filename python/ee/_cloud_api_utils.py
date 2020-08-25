@@ -11,16 +11,42 @@ from __future__ import division
 from __future__ import print_function
 
 import calendar
+import copy
 import datetime
+
 import re
 import warnings
 
 from . import ee_exception
-from apiclient import discovery
-from apiclient import http
+from google_auth_httplib2 import AuthorizedHttp
+from googleapiclient import discovery
+from googleapiclient import http
+from googleapiclient import model
 
-import httplib2
+# We use the urllib3-aware shim if it's available.
+# It is not available by default if the package is installed via the conda-forge
+# channel.
+# pylint: disable=g-bad-import-order,g-import-not-at-top
+try:
+  import httplib2shim as httplib2
+except ImportError:
+  import httplib2
 import six
+# pylint: enable=g-bad-import-order,g-import-not-at-top
+
+# The Cloud API version.
+VERSION = 'v1alpha'
+
+PROJECT_ID_PATTERN = (r'^(?:\w+(?:[\w\-]+\.[\w\-]+)*?\.\w+\:)?'
+                      r'[a-z][-a-z0-9]{4,28}[a-z0-9]$')
+ASSET_NAME_PATTERN = (r'^projects/((?:\w+(?:[\w\-]+\.[\w\-]+)*?\.\w+\:)?'
+                      r'[a-z][a-z0-9\-]{4,28}[a-z0-9])/assets/(.*)$')
+
+ASSET_ROOT_PATTERN = (r'^projects/((?:\w+(?:[\w\-]+\.[\w\-]+)*?\.\w+\:)?'
+                      r'[a-z][a-z0-9\-]{4,28}[a-z0-9])/assets/?$')
+
+# The default user project to use when making Cloud API calls.
+_cloud_api_user_project = None
 
 
 def _wrap_request(headers_supplier, response_inspector):
@@ -70,12 +96,19 @@ def _wrap_request(headers_supplier, response_inspector):
   return builder
 
 
+def set_cloud_api_user_project(cloud_api_user_project):
+  global _cloud_api_user_project
+  _cloud_api_user_project = cloud_api_user_project
+
+
 def build_cloud_resource(api_base_url,
                          api_key=None,
                          credentials=None,
                          timeout=None,
                          headers_supplier=None,
-                         response_inspector=None):
+                         response_inspector=None,
+                         http_transport=None,
+                         raw=False):
   """Builds an Earth Engine Cloud API resource.
 
   Args:
@@ -87,24 +120,34 @@ def build_cloud_resource(api_base_url,
       to a request. Will be called once for each request.
     response_inspector: A callable that will be invoked with the raw
       httplib2.Response responses.
+    http_transport: An optional custom http_transport to use.
+    raw: Whether or not to return raw bytes when making method requests.
 
   Returns:
     A resource object to use to call the Cloud API.
   """
   discovery_service_url = (
-      '{}/$discovery/rest?version=v1&prettyPrint=false'
-      .format(api_base_url))
-  http_transport = httplib2.Http(timeout=timeout)
-  if credentials:
-    http_transport = credentials.authorize(http_transport)
+      '{}/$discovery/rest?version={}&prettyPrint=false'
+      .format(api_base_url, VERSION))
+  if http_transport is None:
+    http_transport = httplib2.Http(timeout=timeout)
+  if credentials is not None:
+    http_transport = AuthorizedHttp(credentials, http=http_transport)
   request_builder = _wrap_request(headers_supplier, response_inspector)
-  return discovery.build(
+  # Discovery uses json by default.
+  if raw:
+    alt_model = model.RawModel()
+  else:
+    alt_model = None
+  resource = discovery.build(
       'earthengine',
-      'v1',
+      VERSION,
       discoveryServiceUrl=discovery_service_url,
       developerKey=api_key,
       http=http_transport,
-      requestBuilder=request_builder)
+      requestBuilder=request_builder,
+      model=alt_model)
+  return resource
 
 
 def build_cloud_resource_from_document(discovery_document,
@@ -133,7 +176,11 @@ def build_cloud_resource_from_document(discovery_document,
       requestBuilder=request_builder)
 
 
-def _convert_dict(to_convert, conversions, defaults=None, key_warnings=False):
+def _convert_dict(to_convert,
+                  conversions,
+                  defaults=None,
+                  key_warnings=False,
+                  retain_keys=False):
   """Applies a set of conversion rules to a dict.
 
   Args:
@@ -150,8 +197,8 @@ def _convert_dict(to_convert, conversions, defaults=None, key_warnings=False):
       - If "conversions" contains "k"->("X", f) then the result will contain
         "X"->f("v")
       - If "conversions" does not contain an entry for "k" then the result
-        will not contain an entry for "k"; if key_warnings is True then a
-        warning will be printed.
+        will not contain an entry for "k" unless retain_keys is true;
+        if key_warnings is True then a warning will be printed.
       - If two or more distinct input keys are converted to the same output key,
         one of the resulting values will appear in the result, the others
         will be dropped, and a warning will be printed.
@@ -159,6 +206,8 @@ def _convert_dict(to_convert, conversions, defaults=None, key_warnings=False):
       not contain these keys.
     key_warnings: Whether to print warnings for input keys that are not mapped
       to anything in the output.
+    retain_keys: Whether or not to retain the state of dict.  If false, any keys
+      that don't show up in the conversions dict will be dropped from result.
 
   Returns:
     The "to_convert" dict with keys renamed, values converted, and defaults
@@ -178,6 +227,8 @@ def _convert_dict(to_convert, conversions, defaults=None, key_warnings=False):
           warnings.warn(
               'Multiple request parameters converted to {}'.format(key))
         result[key] = value
+    elif retain_keys:
+      result[key] = value
     elif key_warnings:
       warnings.warn('Unrecognized key {} ignored'.format(key))
   if defaults:
@@ -253,7 +304,7 @@ def convert_get_list_params_to_list_assets_params(params):
   """Converts a getList params dict to something usable with listAssets."""
   return _convert_dict(
       params, {
-          'id': ('name', convert_asset_id_to_asset_name),
+          'id': ('parent', convert_asset_id_to_asset_name),
           'num': 'pageSize'
       }, key_warnings=True)
 
@@ -265,45 +316,54 @@ def convert_list_assets_result_to_get_list_result(result):
   return [_convert_asset_for_get_list_result(i) for i in result['assets']]
 
 
-def convert_list_buckets_result_to_get_list_result(result):
-  """Converts a listBuckets result to something getAssetRoots can return."""
-  if 'buckets' not in result:
-    return []
-  return [_convert_asset_for_get_list_result(i) for i in result['buckets']]
-
-
 def convert_get_list_params_to_list_images_params(params):
   """Converts a getList params dict to something usable with listImages."""
   params = _convert_dict(
       params, {
-          'id': ('name', convert_asset_id_to_asset_name),
+          'id': ('parent', convert_asset_id_to_asset_name),
           'num': 'pageSize',
           'starttime': ('startTime', _convert_msec_to_timestamp),
           'endtime': ('endTime', _convert_msec_to_timestamp),
           'bbox': ('region', _convert_bounding_box_to_geo_json),
-          'region': 'region'
+          'region': 'region',
+          'filter': 'filter'
       },
       key_warnings=True)
   # getList returns minimal information; we can filter unneeded stuff out
   # server-side.
-  params['fields'] = 'assets(type,path)'
+  params['view'] = 'BASIC'
   return params
+
+
+def is_asset_root(asset_name):
+  return bool(re.match(ASSET_ROOT_PATTERN, asset_name))
 
 
 def convert_list_images_result_to_get_list_result(result):
   """Converts a listImages result to something getList can return."""
-  # listImages and listAssets have basically identical result types.
-  return convert_list_assets_result_to_get_list_result(result)
+  if 'images' not in result:
+    return []
+  return [_convert_image_for_get_list_result(i) for i in result['images']]
 
 
 def _convert_asset_for_get_list_result(asset):
   """Converts an EarthEngineAsset to the format returned by getList."""
   result = _convert_dict(
       asset, {
-          'path': 'id',
+          'name': 'id',
           'type': ('type', _convert_asset_type_for_get_list_result)
       },
       defaults={'type': 'Unknown'})
+  return result
+
+
+def _convert_image_for_get_list_result(asset):
+  """Converts an Image to the format returned by getList."""
+  result = _convert_dict(
+      asset, {
+          'name': 'id',
+      },
+      defaults={'type': 'Image'})
   return result
 
 
@@ -322,7 +382,9 @@ def convert_asset_type_for_create_asset(asset_type):
   """Converts a createAsset asset type to an EarthEngineAsset.Type."""
   return _convert_value(
       asset_type, {
+          'Image': 'IMAGE',
           'ImageCollection': 'IMAGE_COLLECTION',
+          'Table': 'TABLE',
           'Folder': 'FOLDER'
       }, asset_type)
 
@@ -339,13 +401,12 @@ def convert_asset_id_to_asset_name(asset_id):
   Returns:
     An asset name string in the format 'projects/*/assets/**'.
   """
-  # r'[a-z][a-z0-9\-]{4,28}[a-z0-9]' matches a valid Cloud project ID.
-  if re.match(r'projects/[a-z][a-z0-9\-]{4,28}[a-z0-9]/assets/.*', asset_id):
+  if re.match(ASSET_NAME_PATTERN, asset_id) or is_asset_root(asset_id):
     return asset_id
   elif asset_id.split('/')[0] in ['users', 'projects']:
-    return 'projects/earthengine-legacy/assets/' + asset_id
+    return 'projects/earthengine-legacy/assets/{}'.format(asset_id)
   else:
-    return 'projects/earthengine-public/assets/' + asset_id
+    return 'projects/earthengine-public/assets/{}'.format(asset_id)
 
 
 def split_asset_name(asset_name):
@@ -363,12 +424,64 @@ def split_asset_name(asset_name):
 
 def convert_operation_name_to_task_id(operation_name):
   """Converts an Operation name to a task ID."""
-  return re.match('operations/(.*)', operation_name).group(1)
+  found = re.search(r'^.*operations/(.*)$', operation_name)
+  return found.group(1) if found else operation_name
 
 
 def convert_task_id_to_operation_name(task_id):
   """Converts a task ID to an Operation name."""
-  return 'operations/' + task_id
+  return 'projects/{}/operations/{}'.format(_cloud_api_user_project, task_id)
+
+
+def convert_params_to_image_manifest(params):
+  """Converts params to an ImageManifest for ingestion."""
+  return _convert_dict(
+      params, {
+          'id': ('name', convert_asset_id_to_asset_name),
+          'tilesets': ('tilesets', convert_tilesets_to_one_platform_tilesets)
+      },
+      retain_keys=True)
+
+
+def convert_params_to_table_manifest(params):
+  """Converts params to a TableManifest for ingestion."""
+  return _convert_dict(
+      params, {
+          'id': ('name', convert_asset_id_to_asset_name),
+          'sources': ('sources', convert_sources_to_one_platform_sources),
+      },
+      retain_keys=True)
+
+
+def convert_tilesets_to_one_platform_tilesets(tilesets):
+  """Converts a tileset to a one platform representation of a tileset."""
+  converted_tilesets = []
+  for tileset in tilesets:
+    converted_tileset = _convert_dict(
+        tileset,
+        {'sources': ('sources', convert_sources_to_one_platform_sources)},
+        retain_keys=True)
+    converted_tilesets.append(converted_tileset)
+  return converted_tilesets
+
+
+def convert_sources_to_one_platform_sources(sources):
+  """Converts the sources to one platform representation of sources."""
+  converted_sources = []
+  for source in sources:
+    converted_source = copy.deepcopy(source)
+    if 'primaryPath' in converted_source:
+      file_sources = [converted_source['primaryPath']]
+      if 'additionalPaths' in converted_source:
+        file_sources += converted_source['additionalPaths']
+        del converted_source['additionalPaths']
+      del converted_source['primaryPath']
+      converted_source['uris'] = file_sources
+    if 'maxError' in converted_source:
+      converted_source['maxErrorMeters'] = converted_source['maxError']
+      del converted_source['maxError']
+    converted_sources.append(converted_source)
+  return converted_sources
 
 
 def encode_number_as_cloud_value(number):
@@ -395,6 +508,7 @@ def convert_algorithms(algorithms):
     - optional: bool (optional)
     - default: default value (optional)
   - hidden: bool (optional)
+  - preview: bool (optional)
   - deprecated: string containing deprecation reason (optional)
 
   Args:
@@ -417,7 +531,8 @@ def _convert_algorithm(algorithm):
           'description': 'description',
           'returnType': 'returns',
           'arguments': ('args', _convert_algorithm_arguments),
-          'hidden': 'hidden'
+          'hidden': 'hidden',
+          'preview': 'preview'
       },
       defaults={
           'description': '',
@@ -459,12 +574,12 @@ def convert_to_image_file_format(format_str):
     A best guess at the corresponding ImageFileFormat enum name.
   """
   if format_str is None:
-    return 'AUTO_PNG_JPEG'
+    return 'AUTO_JPEG_PNG'
   format_str = format_str.upper()
   if format_str == 'JPG':
     return 'JPEG'
   elif format_str == 'AUTO':
-    return 'AUTO_PNG_JPEG'
+    return 'AUTO_JPEG_PNG'
   elif format_str == 'GEOTIFF':
     return 'GEO_TIFF'
   elif format_str == 'TFRECORD':
@@ -594,13 +709,15 @@ def convert_operation_to_task(operation):
           'updateTime': ('update_timestamp_ms', _convert_timestamp_to_msec),
           'startTime': ('start_timestamp_ms', _convert_timestamp_to_msec),
           'state': ('state', _convert_operation_state_to_task_state),
-          'description': 'description'
+          'description': 'description',
+          'type': 'task_type',
+          'destinationUris': 'destination_uris',
           })
   if operation.get('done'):
     if 'error' in operation:
       result['error_message'] = operation['error']['message']
   result['id'] = convert_operation_name_to_task_id(operation['name'])
-  result['task_type'] = 'UNKNOWN'
+  result['name'] = operation['name']
   return result
 
 

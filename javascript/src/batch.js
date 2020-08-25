@@ -10,6 +10,7 @@ goog.require('ee.FeatureCollection');
 goog.require('ee.Geometry');
 goog.require('ee.Image');
 goog.require('ee.ImageCollection');
+goog.require('ee.apiclient');
 goog.require('ee.arguments');
 goog.require('ee.data');
 goog.require('ee.data.ExportDestination');
@@ -25,17 +26,20 @@ const ExportDestination = ee.data.ExportDestination;
 const ExportType = ee.data.ExportType;
 const GoogPromise = goog.Promise;
 const googArray = goog.array;
-const googAsserts = goog.asserts;
 const googObject = goog.object;
 const json = goog.json;
 
+/** @const */
+ee.batch.Export.image = {};
 
-ee.batch.Export = {
-  image: {},
-  map: {},
-  table: {},
-  video: {},
-};
+/** @const */
+ee.batch.Export.map = {};
+
+/** @const */
+ee.batch.Export.table = {};
+
+/** @const */
+ee.batch.Export.video = {};
 
 
 
@@ -63,11 +67,11 @@ ee.batch.ExportTask = class {
 
     const eeElement = ee.batch.Export.extractElement(exportArgs);
     // Construct a configuration object for the server.
-    let config = {'json': eeElement.serialize()};
+    let config = {'element': eeElement};
     Object.assign(config, exportArgs);
     // The config is some kind of task configuration.
     config = /** @type {!ee.data.AbstractTaskConfig} */ (
-        googObject.filter(config, goog.isDefAndNotNull));
+        googObject.filter(config, x => x != null));
 
     return new ee.batch.ExportTask(config);
   }
@@ -84,20 +88,20 @@ ee.batch.ExportTask = class {
    * @export
    */
   start(opt_success, opt_error) {
-    googAsserts.assert(
+    goog.asserts.assert(
         this.config_, 'Task config must be specified for tasks to be started.');
 
     // Synchronous task start.
     if (!opt_success) {
       this.id = this.id || ee.data.newTaskId(1)[0];
-      googAsserts.assertString(this.id, 'Failed to obtain task ID.');
+      goog.asserts.assertString(this.id, 'Failed to obtain task ID.');
       ee.data.startProcessing(this.id, this.config_);
       return;
     }
 
     // Asynchronous task start.
     const startProcessing = () => {
-      googAsserts.assertString(this.id);
+      goog.asserts.assertString(this.id);
       ee.data.startProcessing(this.id, this.config_, (_, error) => {
         if (error) {
           opt_error(error);
@@ -142,7 +146,7 @@ ee.batch.ExportTask = class {
  * @param {?ee.Geometry.LinearRing|?ee.Geometry.Polygon|string=} opt_region
  * @param {number=} opt_scale
  * @param {string=} opt_crs
- * @param {string=} opt_crsTransform
+ * @param {!Array<number>|string=} opt_crsTransform
  * @param {number=} opt_maxPixels
  * @return {!ee.batch.ExportTask}
  * @export
@@ -167,7 +171,7 @@ ee.batch.Export.image.toAsset = function(
  * @param {?ee.Geometry.LinearRing|?ee.Geometry.Polygon|string=} opt_region
  * @param {number=} opt_scale
  * @param {string=} opt_crs
- * @param {string=} opt_crsTransform
+ * @param {!Array<number>|string=} opt_crsTransform
  * @param {number=} opt_maxPixels
  * @param {number=} opt_shardSize
  * @param {number|?Array<number>=} opt_fileDimensions
@@ -199,7 +203,7 @@ ee.batch.Export.image.toCloudStorage = function(
  * @param {?ee.Geometry.LinearRing|?ee.Geometry.Polygon|string=} opt_region
  * @param {number=} opt_scale
  * @param {string=} opt_crs
- * @param {string=} opt_crsTransform
+ * @param {!Array<number>|string=} opt_crsTransform
  * @param {number=} opt_maxPixels
  * @param {number=} opt_shardSize
  * @param {number|?Array<number>=} opt_fileDimensions
@@ -320,7 +324,7 @@ ee.batch.Export.table.toAsset = function(
  * @param {?ee.Geometry.LinearRing|?ee.Geometry.Polygon|string=} opt_region
  * @param {number=} opt_scale Resolution
  * @param {string=} opt_crs
- * @param {string=} opt_crsTransform
+ * @param {!Array<number>|string=} opt_crsTransform
  * @param {number=} opt_maxPixels
  * @param {number=} opt_maxFrames
  * @return {!ee.batch.ExportTask}
@@ -348,7 +352,7 @@ ee.batch.Export.video.toCloudStorage = function(
  * @param {?ee.Geometry.LinearRing|?ee.Geometry.Polygon|string=} opt_region
  * @param {number=} opt_scale
  * @param {string=} opt_crs
- * @param {string=} opt_crsTransform
+ * @param {!Array<number>|string=} opt_crsTransform
  * @param {number=} opt_maxPixels
  * @param {number=} opt_maxFrames
  * @return {!ee.batch.ExportTask}
@@ -366,8 +370,6 @@ ee.batch.Export.video.toDrive = function(
 };
 
 
-
-
 ////////////////////////////////////////////////////////////////////////////////
 //                          Internal validation.                              //
 ////////////////////////////////////////////////////////////////////////////////
@@ -379,7 +381,8 @@ ee.batch.Export.video.toDrive = function(
  * equivalent parameters, see the Public API section above.
  *
  * @typedef {!ee.data.ImageTaskConfig|!ee.data.MapTaskConfig|
- *     !ee.data.TableTaskConfig|!ee.data.VideoTaskConfig}
+ *     !ee.data.TableTaskConfig|!ee.data.VideoTaskConfig|
+ *     !ee.data.VideoMapTaskConfig}
  */
 ee.batch.ServerTaskConfig = {};
 
@@ -400,9 +403,9 @@ ee.batch.Export.serializeRegion = function(region) {
   // Convert region to a GeoJSON object.
   if (region instanceof ee.Geometry) {
     region = region.toGeoJSON();
-  } else if (goog.isString(region)) {
+  } else if (typeof region === 'string') {
     try {
-      region = googAsserts.assertObject(JSON.parse(region));
+      region = goog.asserts.assertObject(JSON.parse(region));
     } catch (x) {
       throw Error(REGION_ERROR);
     }
@@ -449,16 +452,27 @@ ee.batch.Export.resolveRegionParam = function(params) {
         if (error) {
           reject(error);
         } else {
-          params['region'] = ee.batch.Export.serializeRegion(regionInfo);
+          if (ee.apiclient.getCloudApiEnabled() &&
+              params['type'] === ExportType.IMAGE) {
+            params['region'] = new ee.Geometry(regionInfo);
+          } else {
+            params['region'] = ee.batch.Export.serializeRegion(regionInfo);
+          }
           resolve(params);
         }
       });
     });
   }
-
-  params['region'] = ee.batch.Export.serializeRegion(region);
+  if (ee.apiclient.getCloudApiEnabled() &&
+      params['type'] === ExportType.IMAGE) {
+    params['region'] = new ee.Geometry(region);
+  } else {
+    params['region'] = ee.batch.Export.serializeRegion(region);
+  }
   return GoogPromise.resolve(params);
 };
+
+
 
 /**
  * Extracts the EE element from a given task config.
@@ -470,7 +484,7 @@ ee.batch.Export.extractElement = function(exportArgs) {
   const isInArgs = (key) => key in exportArgs;
   const eeElementKey = ee.batch.Export.EE_ELEMENT_KEYS.find(isInArgs);
   // Sanity check that the Image/Collection/Table was provided.
-  googAsserts.assert(
+  goog.asserts.assert(
       googArray.count(ee.batch.Export.EE_ELEMENT_KEYS, isInArgs) === 1,
       'Expected a single "image" or "collection" key.');
   const element = exportArgs[eeElementKey];
@@ -533,7 +547,7 @@ ee.batch.Export.convertToServerParams = function(
     default:
       throw Error('Unknown export type: ' + taskConfig['type']);
   }
-  if (serializeRegion && goog.isDefAndNotNull(taskConfig['region'])) {
+  if (serializeRegion && taskConfig['region'] != null) {
     taskConfig['region'] =
         ee.batch.Export.serializeRegion(taskConfig['region']);
   }
@@ -593,12 +607,16 @@ ee.batch.Export.prepareDestination_ = function(taskConfig, destination) {
  * @private
  */
 ee.batch.Export.image.prepareTaskConfig_ = function(taskConfig, destination) {
+  // Set the file format to GeoTiff if not set.
+  if (taskConfig['fileFormat'] == null) {
+    taskConfig['fileFormat'] = 'GeoTIFF';
+  }
   // Handle format-specific options.
   taskConfig = ee.batch.Export.reconcileImageFormat(taskConfig);
   // Add top-level destination fields.
   taskConfig = ee.batch.Export.prepareDestination_(taskConfig, destination);
   // Fix the CRS transform key.
-  if (goog.isDefAndNotNull(taskConfig['crsTransform'])) {
+  if (taskConfig['crsTransform'] != null) {
     taskConfig[ee.batch.Export.CRS_TRANSFORM_KEY] = taskConfig['crsTransform'];
     delete taskConfig['crsTransform'];
   }
@@ -617,7 +635,7 @@ ee.batch.Export.image.prepareTaskConfig_ = function(taskConfig, destination) {
  */
 ee.batch.Export.table.prepareTaskConfig_ = function(taskConfig, destination) {
   // Convert array-valued selectors to a comma-separated string.
-  if (goog.isArray(taskConfig['selectors'])) {
+  if (Array.isArray(taskConfig['selectors'])) {
     taskConfig['selectors'] = taskConfig['selectors'].join();
   }
   taskConfig = ee.batch.Export.prepareDestination_(taskConfig, destination);
@@ -652,7 +670,7 @@ ee.batch.Export.map.prepareTaskConfig_ = function(taskConfig, destination) {
 ee.batch.Export.video.prepareTaskConfig_ = function(taskConfig, destination) {
   taskConfig = ee.batch.Export.reconcileVideoFormat_(taskConfig);
   taskConfig = ee.batch.Export.prepareDestination_(taskConfig, destination);
-  if (goog.isDefAndNotNull(taskConfig['crsTransform'])) {
+  if (taskConfig['crsTransform'] != null) {
     taskConfig[ee.batch.Export.CRS_TRANSFORM_KEY] = taskConfig['crsTransform'];
     delete taskConfig['crsTransform'];
   }
@@ -660,20 +678,25 @@ ee.batch.Export.video.prepareTaskConfig_ = function(taskConfig, destination) {
 };
 
 /**
- * Adapts a ServerTaskConfig into a MapTaskConfig normalizing any params
+ * Adapts a ServerTaskConfig into a VideoMapTaskConfig normalizing any params
  * for a video map task.
  *
  * @param {!ee.batch.ServerTaskConfig} taskConfig VideoMap export config to
  *     prepare.
  * @param {!ee.data.ExportDestination} destination Export destination.
- * @return {!ee.data.MapTaskConfig}
+ * @return {!ee.data.VideoMapTaskConfig}
  * @private
  */
 ee.batch.Export.videoMap.prepareTaskConfig_ = function(
     taskConfig, destination) {
   taskConfig = ee.batch.Export.reconcileVideoFormat_(taskConfig);
+  taskConfig['version'] = taskConfig['version'] || ee.batch.VideoMapVersion.V1;
+  taskConfig['stride'] = taskConfig['stride'] || 1;
+  const width = taskConfig['tileWidth'] || 256,
+        height = taskConfig['tileHeight'] || 256;
+  taskConfig['tileDimensions'] = {width: width, height: height};
   taskConfig = ee.batch.Export.prepareDestination_(taskConfig, destination);
-  return /** @type {!ee.data.MapTaskConfig} */ (taskConfig);
+  return /** @type {!ee.data.VideoMapTaskConfig} */ (taskConfig);
 };
 
 
@@ -696,13 +719,14 @@ ee.batch.ImageFormat = {
   TF_RECORD_IMAGE: 'TF_RECORD_IMAGE',
 };
 
+
 /** @type {!Object<string, !Array<string>>} */
 const FORMAT_OPTIONS_MAP = {
-  GEO_TIFF: [
+  'GEO_TIFF': [
     'cloudOptimized',
     'fileDimensions',
   ],
-  TF_RECORD_IMAGE: [
+  'TF_RECORD_IMAGE': [
     'patchDimensions',
     'kernelSize',
     'compressed',
@@ -718,8 +742,8 @@ const FORMAT_OPTIONS_MAP = {
 
 /** @type {!Object<string, string>} */
 const FORMAT_PREFIX_MAP = {
-  GEO_TIFF: 'tiff',
-  TF_RECORD_IMAGE: 'tfrecord'
+  'GEO_TIFF': 'tiff',
+  'TF_RECORD_IMAGE': 'tfrecord'
 };
 
 /**
@@ -749,7 +773,7 @@ ee.batch.Export.reconcileImageFormat = function(taskConfig) {
   // Parse the image format key from the given fileFormat.
   let formatString = taskConfig['fileFormat'];
   // If not specified assume the format is geotiff.
-  if (!goog.isDefAndNotNull(formatString)) {
+  if (formatString == null) {
     formatString = 'GEO_TIFF';
   }
   formatString = formatString.toUpperCase();
@@ -771,7 +795,7 @@ ee.batch.Export.reconcileImageFormat = function(taskConfig) {
           `Supported formats are: 'GEOTIFF', 'TFRECORD'.`);
   }
 
-  if (goog.isDefAndNotNull(taskConfig['formatOptions'])) {
+  if (taskConfig['formatOptions'] != null) {
     // Add the prefix to the format-specific options.
     const formatOptions =
         ee.batch.Export.prefixImageFormatOptions_(taskConfig, formatString);
@@ -796,7 +820,7 @@ ee.batch.Export.reconcileImageFormat = function(taskConfig) {
 ee.batch.Export.prefixImageFormatOptions_ = function(taskConfig, imageFormat) {
   let formatOptions = taskConfig['formatOptions'];
   // No-op if no format options are provided.
-  if (!goog.isDefAndNotNull(formatOptions)) {
+  if (formatOptions == null) {
     return {};
   }
   // Verify that any formatOptions are not already specified in the
@@ -818,7 +842,7 @@ ee.batch.Export.prefixImageFormatOptions_ = function(taskConfig, imageFormat) {
           `"may have the following options: ${validKeysMsg}".`);
     }
     const prefixedKey = prefix + key[0].toUpperCase() + key.substring(1);
-    if (goog.isArray(value)) {
+    if (Array.isArray(value)) {
       // Legacy format options are comma delimited strings.
       prefixedOptions[prefixedKey] = value.join();
     } else {

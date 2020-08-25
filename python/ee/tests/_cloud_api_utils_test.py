@@ -15,6 +15,10 @@ from ee import ee_exception
 
 class CloudApiUtilsTest(unittest.TestCase):
 
+  def setUp(self):
+    super(CloudApiUtilsTest, self).setUp()
+    _cloud_api_utils.set_cloud_api_user_project('earthengine-legacy')
+
   def test_convert_dict_simple(self):
     result = _cloud_api_utils._convert_dict({
         'x': 99,
@@ -44,13 +48,13 @@ class CloudApiUtilsTest(unittest.TestCase):
           'x': 'flan',
           'y': 'flan'
       })
-      self.assertEqual(1, len(w))
+      self.assertLen(w, 1)
       self.assertEqual('Multiple request parameters converted to flan',
                        str(w[0].message))
     with warnings.catch_warnings(record=True) as w:
       result = _cloud_api_utils._convert_dict({'x': 1, 'y': 2}, {'x': 'flan'})
       self.assertEqual({'flan': 1}, result)
-      self.assertEqual(0, len(w))
+      self.assertEmpty(w)
     with warnings.catch_warnings(record=True) as w:
       result = _cloud_api_utils._convert_dict(
           {
@@ -58,7 +62,7 @@ class CloudApiUtilsTest(unittest.TestCase):
               'y': 2
           }, {'x': 'flan'}, key_warnings=True)
       self.assertEqual({'flan': 1}, result)
-      self.assertEqual(1, len(w))
+      self.assertLen(w, 1)
       self.assertEqual('Unrecognized key y ignored', str(w[0].message))
 
   def test_convert_value(self):
@@ -130,11 +134,22 @@ class CloudApiUtilsTest(unittest.TestCase):
   def test_convert_operation_name_to_task_id(self):
     self.assertEqual(
         'taskId',
-        _cloud_api_utils.convert_operation_name_to_task_id('operations/taskId'))
+        _cloud_api_utils.convert_operation_name_to_task_id(
+            'operations/taskId'))
+    self.assertEqual(
+        'taskId',
+        _cloud_api_utils.convert_operation_name_to_task_id(
+            'projects/test/operations/taskId'))
+    self.assertEqual(
+        'taskId',
+        _cloud_api_utils.convert_operation_name_to_task_id(
+            'projects/operations/operations/taskId'))
+    self.assertEqual(
+        'taskId', _cloud_api_utils.convert_operation_name_to_task_id('taskId'))
 
   def test_convert_task_id_to_operation_name(self):
     self.assertEqual(
-        'operations/taskId',
+        'projects/earthengine-legacy/operations/taskId',
         _cloud_api_utils.convert_task_id_to_operation_name('taskId'))
 
   def test_encode_number_as_cloud_value(self):
@@ -179,6 +194,12 @@ class CloudApiUtilsTest(unittest.TestCase):
                 'hidden': True
             },
             {
+                'name': 'algorithms/algPreview',
+                'description': 'desc',
+                'returnType': 'ret',
+                'preview': True
+            },
+            {
                 'name': 'algorithms/algDeprecated',
                 'description': 'desc',
                 'returnType': 'ret',
@@ -215,6 +236,12 @@ class CloudApiUtilsTest(unittest.TestCase):
             'args': [],
             'hidden': True
         },
+        'algPreview': {
+            'description': 'desc',
+            'returns': 'ret',
+            'args': [],
+            'preview': True
+        },
         'algDeprecated': {
             'description': 'desc',
             'returns': 'ret',
@@ -224,9 +251,9 @@ class CloudApiUtilsTest(unittest.TestCase):
     }, result)
 
   def test_convert_to_image_file_format(self):
-    self.assertEqual('AUTO_PNG_JPEG',
+    self.assertEqual('AUTO_JPEG_PNG',
                      _cloud_api_utils.convert_to_image_file_format(None))
-    self.assertEqual('AUTO_PNG_JPEG',
+    self.assertEqual('AUTO_JPEG_PNG',
                      _cloud_api_utils.convert_to_image_file_format('auto'))
     self.assertEqual('JPEG',
                      _cloud_api_utils.convert_to_image_file_format('jpg'))
@@ -302,7 +329,9 @@ class CloudApiUtilsTest(unittest.TestCase):
         'creation_timestamp_ms': 1538676001749,
         'id': '7T42Q7FH4KSIXQKGT6MJFBPX',
         'update_timestamp_ms': 1538676053218,
-        'task_type': 'UNKNOWN'
+        'task_type': 'INGEST_IMAGE',
+        'destination_uris': ['https://test.com'],
+        'name': 'projects/test/operations/7T42Q7FH4KSIXQKGT6MJFBPX',
     },
                      _cloud_api_utils.convert_operation_to_task({
                          'metadata': {
@@ -311,10 +340,14 @@ class CloudApiUtilsTest(unittest.TestCase):
                              'description': 'Ingest image: "an/image"',
                              'startTime': '2018-10-04T18:00:04Z',
                              'state': 'SUCCEEDED',
-                             'endTime': '2018-10-04T18:00:53.218488Z'
+                             'endTime': '2018-10-04T18:00:53.218488Z',
+                             'type': 'INGEST_IMAGE',
+                             'destinationUris': ['https://test.com'],
                          },
                          'done': True,
-                         'name': 'operations/7T42Q7FH4KSIXQKGT6MJFBPX'
+                         'name':
+                             'projects/test/operations/'
+                             '7T42Q7FH4KSIXQKGT6MJFBPX',
                      }))
 
   def test_convert_iam_policy_to_acl(self):
@@ -356,6 +389,109 @@ class CloudApiUtilsTest(unittest.TestCase):
                      _cloud_api_utils.convert_to_grid_dimensions((123)))
     self.assertEqual({'width': 123, 'height': 234},
                      _cloud_api_utils.convert_to_grid_dimensions((123, 234)))
+
+  def test_to_image_one_platform_source(self):
+    old_sources = [{
+        'primaryPath': 'path1',
+        'affineTransform': {
+            'scaleX': 1,
+            'shearX': 2,
+            'translateX': 3,
+            'shearY': 4,
+            'scaleY': 5,
+            'translateY': 6,
+        }
+    }]
+    expected = [{
+        'uris': ['path1'],
+        'affineTransform': {
+            'scaleX': 1,
+            'shearX': 2,
+            'translateX': 3,
+            'shearY': 4,
+            'scaleY': 5,
+            'translateY': 6,
+        }
+    }]
+    self.assertEqual(
+        expected,
+        _cloud_api_utils.convert_sources_to_one_platform_sources(old_sources))
+
+  def test_to_shape_one_platform_source(self):
+    old_sources = [{
+        'charset':
+            'UTF-8',
+        'maxError':
+            1,
+        'maxVertices':
+            100000,
+        'primaryPath':
+            'gs://ee.google.com.a.appspot.com/qGc_ZVNWLKpokgLv/test.shp',
+        'additionalPaths': [
+            'gs://ee.google.com.a.appspot.com/qGc_ZVNWLKpokgLv/test.dbf',
+            'gs://ee.google.com.a.appspot.com/qGc_ZVNWLKpokgLv/test.prj',
+            'gs://ee.google.com.a.appspot.com/qGc_ZVNWLKpokgLv/test.shx',
+        ],
+    }]
+    expected = [{
+        'charset':
+            'UTF-8',
+        'maxErrorMeters':
+            1,
+        'maxVertices':
+            100000,
+        'uris': [
+            'gs://ee.google.com.a.appspot.com/qGc_ZVNWLKpokgLv/test.shp',
+            'gs://ee.google.com.a.appspot.com/qGc_ZVNWLKpokgLv/test.dbf',
+            'gs://ee.google.com.a.appspot.com/qGc_ZVNWLKpokgLv/test.prj',
+            'gs://ee.google.com.a.appspot.com/qGc_ZVNWLKpokgLv/test.shx',
+        ],
+    }]
+    self.assertEqual(
+        expected,
+        _cloud_api_utils.convert_sources_to_one_platform_sources(old_sources))
+
+  def test_to_csv_one_platform_source(self):
+    old_sources = [{
+        'charset':
+            'UTF-8',
+        'maxError':
+            1,
+        'maxVertices':
+            1000000,
+        'geodesic':
+            True,
+        'primaryGeometryColumn':
+            'geometry0',
+        'xColumn':
+            'x',
+        'yColumn':
+            'y',
+        'primaryPath':
+            'gs://ee.google.com.a.appspot.com/qGc_ZVNWLKpokgLv/wildlife.csv',
+    }]
+    expected = [{
+        'charset':
+            'UTF-8',
+        'maxErrorMeters':
+            1,
+        'maxVertices':
+            1000000,
+        'geodesic':
+            True,
+        'primaryGeometryColumn':
+            'geometry0',
+        'xColumn':
+            'x',
+        'yColumn':
+            'y',
+        'uris': [
+            'gs://ee.google.com.a.appspot.com/qGc_ZVNWLKpokgLv/wildlife.csv',
+        ],
+    }]
+    self.assertEqual(
+        expected,
+        _cloud_api_utils.convert_sources_to_one_platform_sources(old_sources))
 
 
 if __name__ == '__main__':

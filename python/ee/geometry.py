@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# coding=utf-8
 """An object representing EE Geometries."""
 
 
@@ -119,6 +120,32 @@ class Geometry(computedobject.ComputedObject):
     if opt_evenOdd is None and 'evenOdd' in geo_json:
       self._evenOdd = bool(geo_json['evenOdd'])
 
+    # Build a proxy for this object that is an invocation of a server-side
+    # constructor. This is used during Cloud API encoding, but can't be
+    # constructed at that time: due to id()-based caching in Serializer,
+    # building transient objects during encoding isn't safe.
+    ctor_args = {}
+    if self._type == 'GeometryCollection':
+      ctor_name = 'MultiGeometry'
+      ctor_args['geometries'] = [Geometry(g) for g in self._geometries]
+    else:
+      ctor_name = self._type
+      ctor_args['coordinates'] = self._coordinates
+
+    if self._proj is not None:
+      if isinstance(self._proj, six.string_types):
+        ctor_args['crs'] = apifunction.ApiFunction.lookup('Projection').call(
+            self._proj)
+      else:
+        ctor_args['crs'] = self._proj
+
+    if self._geodesic is not None:
+      ctor_args['geodesic'] = self._geodesic
+
+    if self._evenOdd is not None:
+      ctor_args['evenOdd'] = self._evenOdd
+    self._computed_equivalent = apifunction.ApiFunction.lookup(
+        'GeometryConstructors.' + ctor_name).apply(ctor_args)
 
   @classmethod
   def initialize(cls):
@@ -243,6 +270,95 @@ class Geometry(computedobject.ComputedObject):
       init['coordinates'] = [[[x1, y2], [x1, y1], [x2, y1], [x2, y2]]]
       init['type'] = 'Polygon'
     return Geometry(init)
+
+  @staticmethod
+  def BBox(west, south, east, north):
+    """Constructs a rectangle ee.Geometry from lines of latitude and longitude.
+
+    If (east - west) ≥ 360° then the longitude range will be normalized to -180°
+    to +180°; otherwise they will be treated as designating points on a circle
+    (e.g. east may be numerically less than west).
+
+    Args:
+      west: The westernmost enclosed longitude. Will be adjusted to lie in the
+        range -180° to 180°.
+      south: The southernmost enclosed latitude. If less than -90° (south pole),
+        will be treated as -90°.
+      east: The easternmost enclosed longitude.
+      north: The northernmost enclosed longitude. If greater than +90° (north
+        pole), will be treated as +90°.
+
+    Returns:
+      An ee.Geometry describing a planar WGS84 rectangle.
+    """
+    # Not using Geometry._parseArgs because that assumes the args should go
+    # directly into a coordinates field.
+
+    if Geometry._hasServerValue((west, south, east, north)):
+      # Some arguments cannot be handled in the client, so make a server call.
+      return (apifunction.ApiFunction.lookup('GeometryConstructors.BBox')
+              .apply(dict(west=west, south=south, east=east, north=north)))
+    # Else proceed with client-side implementation.
+
+    # Reject NaN and positive (west) or negative (east) infinities before they
+    # become bad JSON. The other two infinities are acceptable because we
+    # support the general idea of a around-the-globe latitude band. By writing
+    # them negated, we also reject NaN.
+    if not west < float('inf'):
+      raise ee_exception.EEException(
+          'Geometry.BBox: west must not be {}'.format(west))
+    if not east > float('-inf'):
+      raise ee_exception.EEException(
+          'Geometry.BBox: east must not be {}'.format(east))
+    # Reject cases which, if we clamped them instead, would move a box whose
+    # bounds lie entirely "past" a pole to being at the pole. By writing them
+    # negated, we also reject NaN.
+    if not south <= 90:
+      raise ee_exception.EEException(
+          'Geometry.BBox: south must be at most +90°, but was {}°'.format(
+              south))
+    if not north >= -90:
+      raise ee_exception.EEException(
+          'Geometry.BBox: north must be at least -90°, but was {}°'.format(
+              north))
+    # On the other hand, allow a box whose extent lies past the pole, but
+    # canonicalize it to being exactly the pole.
+    south = max(south, -90)
+    north = min(north, 90)
+
+    if east - west >= 360:
+      # We conclude from seeing more than 360 degrees that the user intends to
+      # specify the entire globe (or a band of latitudes, at least).
+      # Canonicalize to standard global form.
+      west = -180
+      east = 180
+    else:
+      # Not the entire globe. Canonicalize coordinate ranges.
+      west = Geometry._canonicalize_longitude(west)
+      east = Geometry._canonicalize_longitude(east)
+      if east < west:
+        east += 360
+
+    # GeoJSON does not have a Rectangle type, so expand to a Polygon.
+    return Geometry(
+        geo_json={
+            'coordinates': [[[west, north],
+                             [west, south],
+                             [east, south],
+                             [east, north]]],
+            'type': 'Polygon',
+        },
+        opt_geodesic=False)
+
+  @staticmethod
+  def _canonicalize_longitude(longitude):
+    # Note that Python specifies "The modulo operator always yields a result
+    # with the same sign as its second operand"; therefore no special handling
+    # of negative arguments is needed.
+    longitude = longitude % 360
+    if longitude > 180:
+      longitude -= 360
+    return longitude
 
   # pylint: disable=keyword-arg-before-vararg
   @staticmethod
@@ -464,6 +580,12 @@ class Geometry(computedobject.ComputedObject):
 
     return result
 
+  def encode_cloud_value(self, encoder):
+    """Returns a server-side invocation of the appropriate constructor."""
+    if not getattr(self, '_type', None):
+      return super(Geometry, self).encode_cloud_value(encoder)
+
+    return self._computed_equivalent.encode_cloud_value(encoder)
 
   def toGeoJSON(self):
     """Returns a GeoJSON representation of the geometry."""
@@ -482,12 +604,15 @@ class Geometry(computedobject.ComputedObject):
           'Use getInfo() instead.')
     return json.dumps(self.toGeoJSON())
 
-  def serialize(self):
+  def serialize(self, for_cloud_api=True):
     """Returns the serialized representation of this object."""
-    return serializer.toJSON(self)
+    return serializer.toJSON(self, for_cloud_api=for_cloud_api)
 
   def __str__(self):
     return 'ee.Geometry(%s)' % serializer.toReadableJSON(self)
+
+  def __repr__(self):
+    return self.__str__()
 
   @staticmethod
   def _isValidGeometry(geometry):
@@ -537,7 +662,8 @@ class Geometry(computedobject.ComputedObject):
     if not isinstance(shape, collections.Iterable):
       return -1
 
-    if shape and isinstance(shape[0], collections.Iterable):
+    if shape and isinstance(shape[0], collections.Iterable) and not isinstance(
+        shape[0], six.string_types):
       count = Geometry._isValidCoordinates(shape[0])
       # If more than 1 ring or polygon, they should have the same nesting.
       for i in range(1, len(shape)):
